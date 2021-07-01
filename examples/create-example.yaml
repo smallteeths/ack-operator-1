@@ -1,0 +1,47 @@
+apiVersion: ack.pandaria.io/v1
+kind: ACKClusterConfig
+metadata:
+  name: "<cluster-display-name>"
+spec:
+  aliyun_credential_secret: "<namespace:name>"
+  cloudMonitorFlags: false
+  clusterType: ManagedKubernetes
+  containerCidr: 10.114.0.0/16
+  disableRollback: false
+  endpointPublicAccess: false
+  imported: false
+  keyPair: "<keypair-name>"
+  kubernetesVersion: 1.18.8-aliyun.1
+  masterAutoRenew: false
+  masterAutoRenewPeriod: 1
+  masterCount: 3
+  masterInstanceChargeType: PostPaid
+  masterPeriod: 1
+  masterSystemDiskCategory: cloud_efficiency
+  masterSystemDiskSize: 120
+  masterVswitchIds:
+    - "<master-vswitch-1>"
+    - "<master-vswitch-2>"
+    - "<master-vswitch-3>"
+  name: "<cluster-name-on-aliyun>"
+  node_pool_list:
+    - instance_charge_type: PostPaid
+      instance_types:
+        - "instance_type_1"
+      instances_num: 2
+      key_pair: "<keypair-name>"
+      name: default-nodepool
+      platform: CentOS
+      system_disk_category: cloud_efficiency
+      system_disk_size: 120
+      v_switch_ids:
+        - "<vswitch-id-1>"
+  nodeCidrMask: 26
+  osType: Linux
+  proxyMode: ipvs
+  regionId: cn-hangzhou
+  serviceCidr: 192.168.0.0/16
+  snatEntry: false
+  sshFlags: false
+  vpcId: "<cpcId>"
+  zoneId: "<zoneId>"

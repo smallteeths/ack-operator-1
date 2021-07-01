@@ -1,0 +1,9 @@
+apiVersion: ack.pandaria.io/v1
+kind: ACKClusterConfig
+metadata:
+  name: "<cluster-display-name>"
+spec:
+  imported: true
+  aliyun_credential_secret: "<namespace:name>"
+  cluster_id: "<clusterId>"
+  regionId: "<regionId>"
