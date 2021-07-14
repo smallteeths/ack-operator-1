@@ -501,18 +501,17 @@ func FixConfig(configSpec *ackv1.ACKClusterConfigSpec, clusterMap map[string]int
 		}
 	}
 
-	if outputs != nil {
-		for _, output := range outputs {
-			key := output.(map[string]interface{})["OutputKey"]
-			if key != nil {
-				if key.(string) == "ProxyMode" {
-					if value := output.(map[string]interface{})["OutputValue"]; value != nil {
-						configSpec.ProxyMode = value.(string)
-					}
+	for _, output := range outputs {
+		key := output.(map[string]interface{})["OutputKey"]
+		if key != nil {
+			if key.(string) == "ProxyMode" {
+				if value := output.(map[string]interface{})["OutputValue"]; value != nil {
+					configSpec.ProxyMode = value.(string)
 				}
 			}
 		}
 	}
+
 	return configSpec
 }
 
@@ -531,7 +530,7 @@ func FixClusterId(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClus
 		if *clusters.Clusters[0].Name == configSpec.Name {
 			configSpec.ClusterID = *clusters.Clusters[0].ClusterId
 		} else {
-			logrus.Warnf("error while fix cluster id ,cluster name get :%s,but excped is %s", clusters.Clusters[0].Name, configSpec.Name)
+			logrus.Warnf("error while fix cluster id ,cluster name get :%s,but excped is %s", *clusters.Clusters[0].Name, configSpec.Name)
 		}
 	} else {
 		// return error will block process to return error message
