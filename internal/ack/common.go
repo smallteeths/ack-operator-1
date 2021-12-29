@@ -47,6 +47,7 @@ const (
 // State of node pool
 const (
 	NodePoolStatusActive   = "active"
+	NodePoolStatusInitial  = "initial"
 	NodePoolStatusScaling  = "scaling"
 	NodePoolStatusRemoving = "removing"
 	NodePoolStatusDeleting = "deleting"
