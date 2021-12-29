@@ -99,13 +99,13 @@ type NodePoolInfo struct {
 	AutoRenewPeriod    int64      `json:"auto_renew_period,omitempty" norman:"noupdate"`
 	DataDisk           []DiskInfo `json:"data_disk,omitempty"`
 	InstanceChargeType string     `json:"instance_charge_type,omitempty" norman:"noupdate"`
-	InstanceTypes      []string   `json:"instance_types,omitempty" norman:"noupdate"`
-	KeyPair            string     `json:"key_pair,omitempty" norman:"noupdate"`
+	InstanceTypes      []string   `json:"instance_types,omitempty"`
+	KeyPair            string     `json:"key_pair,omitempty"`
 	LoginPassword      string     `json:"login_password,omitempty"`
 	Period             int64      `json:"period,omitempty" norman:"noupdate"`
 	PeriodUnit         string     `json:"period_unit,omitempty" norman:"noupdate"`
-	Platform           string     `json:"platform,omitempty" norman:"noupdate"`
-	SystemDiskCategory string     `json:"system_disk_category,omitempty" norman:"noupdate"`
-	SystemDiskSize     int64      `json:"system_disk_size,omitempty" norman:"noupdate"`
+	Platform           string     `json:"platform,omitempty"`
+	SystemDiskCategory string     `json:"system_disk_category,omitempty"`
+	SystemDiskSize     int64      `json:"system_disk_size,omitempty"`
 	VSwitchIds         []string   `json:"v_switch_ids,omitempty"`
 }

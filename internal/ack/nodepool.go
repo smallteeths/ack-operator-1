@@ -101,6 +101,7 @@ func UpdateNodePoolBatch(client *sdk.Client, configSpec *ackv1.ACKClusterConfigS
 	}
 
 	// create node pool
+	var failedMsg []string
 	for _, np := range createQueue {
 		c, err := CreateNodePool(client, configSpec, &np)
 		if err != nil {
@@ -116,10 +117,18 @@ func UpdateNodePoolBatch(client *sdk.Client, configSpec *ackv1.ACKClusterConfigS
 				configSpec.NodePoolList[j].NodepoolId = tea.StringValue(c.NodepoolId)
 			}
 		}
+		np.NodepoolId = tea.StringValue(c.NodepoolId)
+		flag = Changed
+		_, errMsg := ScaleUpNodePool(client, configSpec, &np, np.InstancesNum)
+		if errMsg != nil {
+			if !isThrottlingError(err) && !isUnexpectedStatusError(err) {
+				failedMsg = append(failedMsg, fmt.Sprintf("%s(scale up error:%s)", np.NodepoolId, errMsg.Error()))
+			}
+			continue
+		}
 	}
 
 	// update node pool
-	var failedMsg []string
 	for _, np := range updateQueue {
 		unp, ok := upstreamNodePoolInfoMap[np.NodepoolId]
 		if !ok {
@@ -173,7 +182,7 @@ func UpdateNodePoolBatch(client *sdk.Client, configSpec *ackv1.ACKClusterConfigS
 	for _, np := range nodePoolsInfo {
 		npId := np.NodepoolId
 		_, ok := updatedIdMap[npId]
-		if !ok {
+		if !ok && np.Name != DefaultNodePoolName {
 			flag = Changed
 			nodes, err := GetClusterNodes(client, configSpec, npId)
 			if err != nil {

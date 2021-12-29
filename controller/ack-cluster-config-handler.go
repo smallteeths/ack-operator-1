@@ -247,8 +247,9 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 		return config, err
 	}
 	for _, np := range nodePoolsInfo.Nodepools {
-		if status := *np.Status.State; status == ack.NodePoolStatusScaling ||
-			status == ack.NodePoolStatusUpdating || status == ack.NodePoolStatusRemoving {
+		status := *np.Status.State
+		logrus.Infof("nodepool state [%s] np %+v", status, np)
+		if status == ack.NodePoolStatusScaling || status == ack.NodePoolStatusDeleting || status == ack.NodePoolStatusInitial || status == ack.NodePoolStatusUpdating || status == ack.NodePoolStatusRemoving {
 			if config.Status.Phase != ackConfigUpdatingPhase {
 				config = config.DeepCopy()
 				config.Status.Phase = ackConfigUpdatingPhase
@@ -262,7 +263,6 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 			return config, nil
 		}
 	}
-
 	upstreamSpec, err := BuildUpstreamClusterState(h.secretsCache, &config.Spec)
 	if err != nil {
 		return config, err
