@@ -5,13 +5,13 @@ import (
 	"os"
 
 	v12 "github.com/cnrancher/ack-operator/pkg/apis/ack.pandaria.io/v1"
-
 	_ "github.com/rancher/wrangler-api/pkg/generated/controllers/apiextensions.k8s.io"
 	controllergen "github.com/rancher/wrangler/pkg/controller-gen"
 	"github.com/rancher/wrangler/pkg/controller-gen/args"
 	"github.com/rancher/wrangler/pkg/crd"
 	"github.com/rancher/wrangler/pkg/yaml"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -54,16 +54,16 @@ func main() {
 		panic(err)
 	}
 
-	obj.ObjectMeta.Annotations = map[string]string{
+	obj.(*unstructured.Unstructured).SetAnnotations(map[string]string{
 		"helm.sh/resource-policy": "keep",
-	}
+	})
 
-	ackCCYaml, err := yaml.Export(&obj)
+	ackCCYaml, err := yaml.Export(obj)
 	if err != nil {
 		panic(err)
 	}
 
-	if err := saveCRDYaml("ackclusterconfig", string(ackCCYaml)); err != nil {
+	if err := saveCRDYaml("ack-operator-crd", string(ackCCYaml)); err != nil {
 		panic(err)
 	}
 
@@ -86,7 +86,7 @@ func newCRD(obj interface{}, customize func(crd.CRD) crd.CRD) crd.CRD {
 }
 
 func saveCRDYaml(name, yaml string) error {
-	filename := fmt.Sprintf("./templates/%s.yaml", name)
+	filename := fmt.Sprintf("./charts/%s/templates/crds.yaml", name)
 	save, err := os.Create(filename)
 	if err != nil {
 		return err

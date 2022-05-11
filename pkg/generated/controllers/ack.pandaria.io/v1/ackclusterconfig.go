@@ -360,6 +360,10 @@ func (a *aCKClusterConfigGeneratingHandler) Remove(key string, obj *v1.ACKCluste
 }
 
 func (a *aCKClusterConfigGeneratingHandler) Handle(obj *v1.ACKClusterConfig, status v1.ACKClusterConfigStatus) (v1.ACKClusterConfigStatus, error) {
+	if !obj.DeletionTimestamp.IsZero() {
+		return status, nil
+	}
+
 	objs, newStatus, err := a.ACKClusterConfigGeneratingHandler(obj, status)
 	if err != nil {
 		return newStatus, err
