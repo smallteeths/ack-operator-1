@@ -171,6 +171,16 @@ func (h *Handler) OnAckConfigRemoved(key string, config *ackv1.ACKClusterConfig)
 		return config, err
 	}
 
+	_, err = GetCluster(h.secretsCache, &config.Spec)
+	if err != nil {
+		logrus.Infof("Get Cluster %v error: %+v", config.Spec.Name, err)
+		if IsNotFound(err) {
+			logrus.Infof("Cluster %v , region %v already removed", config.Spec.Name, config.Spec.RegionID)
+			return config, nil
+		}
+		return config, err
+	}
+
 	logrus.Infof("removing cluster %v , region %v", config.Spec.Name, config.Spec.RegionID)
 	if err := ack.RemoveCluster(client, &config.Spec); err != nil {
 		logrus.Debugf("error deleting cluster %s: %v", config.Spec.Name, err)
@@ -596,4 +606,11 @@ func (h *Handler) createCASecret(config *ackv1.ACKClusterConfig, cluster *ackapi
 		return nil
 	}
 	return err
+}
+
+func IsNotFound(err error) bool {
+	if strings.Contains(err.Error(), "ErrorClusterNotFound") {
+		return true
+	}
+	return false
 }
