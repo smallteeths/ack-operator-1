@@ -118,7 +118,7 @@ func (h *Handler) recordError(onChange func(key string, config *ackv1.ACKCluster
 		var recordErr error
 		config, recordErr = h.ackCC.UpdateStatus(config)
 		if recordErr != nil {
-			logrus.Errorf("Error recording ackcc [%s] failure message: %s", config.ClusterName, recordErr.Error())
+			logrus.Errorf("Error recording ackcc [%s] failure message: %s", config.Spec.Name, recordErr.Error())
 		}
 		return config, err
 	}
