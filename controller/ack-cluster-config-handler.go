@@ -416,17 +416,19 @@ func GetClusterWithParam(secretsCache wranglerv1.SecretCache, configSpec *ackv1.
 
 func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) (*ackv1.ACKClusterConfigSpec, error) {
 	cluster, err := GetCluster(secretsCache, configSpec)
+
 	if err != nil {
 		return configSpec, err
 	}
 	newSpec := &ackv1.ACKClusterConfigSpec{
-		Name:              *cluster.Name,
-		ClusterID:         *cluster.ClusterId,
-		ClusterType:       *cluster.ClusterType,
-		KubernetesVersion: *cluster.CurrentVersion,
-		RegionID:          *cluster.RegionId,
-		VpcID:             *cluster.VpcId,
-		ZoneID:            *cluster.ZoneId,
+		Name:                 *cluster.Name,
+		ClusterID:            *cluster.ClusterId,
+		ClusterType:          *cluster.ClusterType,
+		KubernetesVersion:    *cluster.CurrentVersion,
+		RegionID:             *cluster.RegionId,
+		VpcID:                *cluster.VpcId,
+		ZoneID:               *cluster.ZoneId,
+		EndpointPublicAccess: configSpec.EndpointPublicAccess,
 	}
 	newSpec.NodePoolList, err = GetNodePoolConfigInfo(secretsCache, configSpec)
 	if err != nil {
@@ -474,6 +476,7 @@ func FixConfig(configSpec *ackv1.ACKClusterConfigSpec, clusterMap map[string]int
 	}
 
 	if params != nil {
+		logrus.Infof("Created Ack Params %+v", params)
 		// for masters
 		if configSpec.ClusterType == "Kubernetes" {
 			configSpec.MasterCount = utils.GetMapInt64("MasterCount", params)
@@ -497,7 +500,6 @@ func FixConfig(configSpec *ackv1.ACKClusterConfigSpec, clusterMap map[string]int
 		configSpec.VpcID = utils.GetMapString("VpcId", params)
 
 		configSpec.SnatEntry = configSpec.SnatEntry || utils.GetMapBoolean("SNatEntry", params)
-		configSpec.EndpointPublicAccess = configSpec.EndpointPublicAccess || utils.GetMapBoolean("Eip", params)
 
 		// SetUpArgs --node-cidr-mask 26
 		nodeCidrMask := utils.GetArgValueByKey("--node-cidr-mask", utils.GetMapString("SetUpArgs", params))

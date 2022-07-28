@@ -62,7 +62,7 @@ type ACKClusterConfigSpec struct {
 	VswitchIds               []string       `json:"vswitchIds,omitempty" norman:"noupdate"`
 	SnatEntry                bool           `json:"snatEntry"`
 	ProxyMode                string         `json:"proxyMode,omitempty"`
-	EndpointPublicAccess     bool           `json:"endpointPublicAccess" norman:"noupdate"`
+	EndpointPublicAccess     bool           `json:"endpointPublicAccess"`
 	SecurityGroupID          string         `json:"securityGroupId,omitempty" norman:"noupdate"`
 	SSHFlags                 bool           `json:"sshFlags"`
 	OsType                   string         `json:"osType,omitempty"`
