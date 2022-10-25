@@ -168,6 +168,8 @@ spec:
               osType:
                 nullable: true
                 type: string
+              pauseClusterUpgrade:
+                type: boolean
               platform:
                 nullable: true
                 type: string
