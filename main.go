@@ -52,7 +52,7 @@ func init() {
 
 func main() {
 	// set up signals so we handle the first shutdown signal gracefully
-	ctx := signals.SetupSignalHandler(context.Background())
+	ctx := signals.SetupSignalContext()
 
 	// This will load the kubeconfig file in a style the same as kubectl
 	cfg, err := kubeconfig.GetNonInteractiveClientConfig(kubeconfigFile).ClientConfig()
@@ -108,7 +108,7 @@ func main() {
 		logrus.Infof("leader election is ON.")
 
 		lock, lockErr := resourcelock.New(
-			resourcelock.ConfigMapsResourceLock,
+			resourcelock.ConfigMapsLeasesResourceLock,
 			lockNamespace,
 			lockName,
 			client.CoreV1(),
