@@ -5,10 +5,10 @@ go 1.16
 replace k8s.io/client-go => k8s.io/client-go v0.18.0
 
 require (
-	github.com/alibabacloud-go/cs-20151215/v2 v2.4.1
-	github.com/alibabacloud-go/darabonba-openapi v0.1.5 // indirect
-	github.com/alibabacloud-go/tea v1.1.15
-	github.com/aliyun/alibaba-cloud-sdk-go v1.61.1099
+	github.com/alibabacloud-go/cs-20151215/v3 v3.0.22
+	github.com/alibabacloud-go/darabonba-openapi v0.2.1 // indirect
+	github.com/alibabacloud-go/tea v1.1.20
+	github.com/aliyun/alibaba-cloud-sdk-go v1.62.11
 	github.com/google/uuid v1.1.1
 	github.com/json-iterator/go v1.1.11 // indirect
 	github.com/rancher/lasso v0.0.0-20210616224652-fc3ebd901c08

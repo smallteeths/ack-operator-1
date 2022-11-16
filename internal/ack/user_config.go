@@ -3,7 +3,7 @@ package ack
 import (
 	ackv1 "github.com/cnrancher/ack-operator/pkg/apis/ack.pandaria.io/v1"
 
-	ackapi "github.com/alibabacloud-go/cs-20151215/v2/client"
+	ackapi "github.com/alibabacloud-go/cs-20151215/v3/client"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 )

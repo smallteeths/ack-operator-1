@@ -14,7 +14,7 @@ import (
 	v12 "github.com/cnrancher/ack-operator/pkg/generated/controllers/ack.pandaria.io/v1"
 	"github.com/cnrancher/ack-operator/utils"
 
-	ackapi "github.com/alibabacloud-go/cs-20151215/v2/client"
+	ackapi "github.com/alibabacloud-go/cs-20151215/v3/client"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	wranglerv1 "github.com/rancher/wrangler/pkg/generated/controllers/core/v1"
