@@ -6,8 +6,8 @@ replace k8s.io/client-go => k8s.io/client-go v0.18.0
 
 require (
 	github.com/alibabacloud-go/cs-20151215/v3 v3.0.22
-	github.com/alibabacloud-go/darabonba-openapi v0.2.1 // indirect
 	github.com/alibabacloud-go/tea v1.1.20
+	github.com/alibabacloud-go/tea-utils v1.4.3 // indirect
 	github.com/aliyun/alibaba-cloud-sdk-go v1.62.11
 	github.com/google/uuid v1.1.1
 	github.com/json-iterator/go v1.1.11 // indirect
