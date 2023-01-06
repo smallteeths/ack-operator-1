@@ -237,39 +237,3 @@ func UpgradeCluster(svc *sdk.Client, state *ackv1.ACKClusterConfigSpec, upstream
 	_, err = svc.ProcessCommonRequest(request)
 	return err
 }
-
-func PauseUpgradeStatus(svc *sdk.Client, state *ackv1.ACKClusterConfigSpec) error {
-	request := requests.NewCommonRequest()
-	request.Method = "POST"
-	request.Scheme = "https" // https | http
-	request.Domain = "cs." + state.RegionID + ".aliyuncs.com"
-	request.Version = DefaultACKAPIVersion
-	request.PathPattern = "/api/v2/clusters/" + state.ClusterID + "/upgrade/pause"
-	request.Headers["Content-Type"] = "application/json"
-	_, err := svc.ProcessCommonRequest(request)
-	return err
-}
-
-func ResumeUpgradeStatus(svc *sdk.Client, state *ackv1.ACKClusterConfigSpec) error {
-	request := requests.NewCommonRequest()
-	request.Method = "POST"
-	request.Scheme = "https" // https | http
-	request.Domain = "cs." + state.RegionID + ".aliyuncs.com"
-	request.Version = DefaultACKAPIVersion
-	request.PathPattern = "/api/v2/clusters/" + state.ClusterID + "/upgrade/resume"
-	request.Headers["Content-Type"] = "application/json"
-	_, err := svc.ProcessCommonRequest(request)
-	return err
-}
-
-func CancelUpgradeStatus(svc *sdk.Client, state *ackv1.ACKClusterConfigSpec) error {
-	request := requests.NewCommonRequest()
-	request.Method = "POST"
-	request.Scheme = "https" // https | http
-	request.Domain = "cs." + state.RegionID + ".aliyuncs.com"
-	request.Version = DefaultACKAPIVersion
-	request.PathPattern = "/api/v2/clusters/" + state.ClusterID + "/upgrade/cancel"
-	request.Headers["Content-Type"] = "application/json"
-	_, err := svc.ProcessCommonRequest(request)
-	return err
-}

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/alibabacloud-go/tea/tea"
 	"strconv"
 	"strings"
 	"time"
@@ -36,6 +37,7 @@ const (
 	ackConfigUpdatingPhase   = "updating"
 	ackConfigImportingPhase  = "importing"
 	wait                     = 30
+	DefaultACKAPIVersion     = "2015-12-15"
 )
 
 type Handler struct {
@@ -231,7 +233,7 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 	if err != nil {
 		return config, err
 	}
-	if (clusterState == ack.ClusterStatusUpdating && !needStopUpgradeCluster(h.secretsCache, &config.Spec)) ||
+	if clusterState == ack.ClusterStatusUpdating ||
 		clusterState == ack.ClusterStatusScaling ||
 		clusterState == ack.ClusterStatusRemoving {
 		// upstream cluster is already updating, must wait until sending next update
@@ -310,51 +312,6 @@ func (h *Handler) updateUpstreamClusterState(config *ackv1.ACKClusterConfig, ups
 	client, err := GetClient(h.secretsCache, &config.Spec)
 	if err != nil {
 		return config, err
-	}
-	upgradeStatus, err := ack.GetUpgradeStatus(client, &config.Spec)
-	if err != nil {
-		return config, err
-	}
-
-	logrus.Infof("show upgradeStatus %+v", upgradeStatus)
-	// Get cluster compare to k8s version
-	if upstreamSpec.KubernetesVersion != config.Spec.KubernetesVersion {
-		// Upgrade
-		if !config.Spec.PauseClusterUpgrade && *upgradeStatus.Status != "stopping" {
-			logrus.Infof("Updateing cluster")
-			err := ack.UpgradeCluster(client, &config.Spec, upstreamSpec)
-			if err != nil {
-				return config, err
-			}
-		}
-		// Pause Upgrade
-		if *upgradeStatus.Status == "running" && config.Spec.PauseClusterUpgrade {
-			logrus.Infof("Pause update cluster")
-			err := ack.PauseUpgradeStatus(client, &config.Spec)
-			if err != nil {
-				return config, err
-			}
-		}
-
-		// Resume upgrade
-		if *upgradeStatus.Status == "stopping" && !config.Spec.PauseClusterUpgrade {
-			logrus.Infof("Resume update cluster")
-			err := ack.ResumeUpgradeStatus(client, &config.Spec)
-			if err != nil {
-				return config, err
-			}
-		}
-		return h.setUpdatingPhase(config)
-	}
-
-	// Cancel Upgrade
-	if upstreamSpec.KubernetesVersion == config.Spec.KubernetesVersion && *upgradeStatus.Status == "running" {
-		logrus.Infof("Cancel update cluster")
-		err := ack.CancelUpgradeStatus(client, &config.Spec)
-		if err != nil {
-			return config, err
-		}
-		return h.setUpdatingPhase(config)
 	}
 
 	var changed ack.Status
@@ -470,6 +427,15 @@ func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *
 	if err != nil {
 		return configSpec, err
 	}
+	client, err := GetClient(secretsCache, configSpec)
+	if err != nil {
+		return configSpec, err
+	}
+	upgradeStatus, err := ack.GetUpgradeStatus(client, configSpec)
+	if err != nil {
+		return configSpec, err
+	}
+	logrus.Infof("upgradeStatus %+v", upgradeStatus)
 	newSpec := &ackv1.ACKClusterConfigSpec{
 		Name:              *cluster.Name,
 		ClusterID:         *cluster.ClusterId,
@@ -679,4 +645,62 @@ func needStopUpgradeCluster(secretsCache wranglerv1.SecretCache, configSpec *ack
 		return true
 	}
 	return false
+}
+
+func UpgradeCluster(svc *sdk.Client, nextVersion string, upstreamSpec *ackv1.ACKClusterConfigSpec) error {
+	request := requests.NewCommonRequest()
+	request.Method = "POST"
+	request.Scheme = "https" // https | http
+	request.Domain = "cs." + upstreamSpec.RegionID + ".aliyuncs.com"
+	request.Version = DefaultACKAPIVersion
+	request.PathPattern = "/api/v2/clusters/" + upstreamSpec.ClusterID + "/upgrade"
+	request.Headers["Content-Type"] = "application/json"
+
+	upgradeClusterRequest := &ackapi.UpgradeClusterRequest{
+		NextVersion: &nextVersion,
+		Version:     tea.String(upstreamSpec.KubernetesVersion),
+	}
+	content, err := json.Marshal(upgradeClusterRequest)
+	if err != nil {
+		return err
+	}
+	request.Content = content
+	_, err = svc.ProcessCommonRequest(request)
+	return err
+}
+
+func PauseUpgradeStatus(svc *sdk.Client, upstreamSpec *ackv1.ACKClusterConfigSpec) error {
+	request := requests.NewCommonRequest()
+	request.Method = "POST"
+	request.Scheme = "https" // https | http
+	request.Domain = "cs." + upstreamSpec.RegionID + ".aliyuncs.com"
+	request.Version = DefaultACKAPIVersion
+	request.PathPattern = "/api/v2/clusters/" + upstreamSpec.ClusterID + "/upgrade/pause"
+	request.Headers["Content-Type"] = "application/json"
+	_, err := svc.ProcessCommonRequest(request)
+	return err
+}
+
+func ResumeUpgradeStatus(svc *sdk.Client, upstreamSpec *ackv1.ACKClusterConfigSpec) error {
+	request := requests.NewCommonRequest()
+	request.Method = "POST"
+	request.Scheme = "https" // https | http
+	request.Domain = "cs." + upstreamSpec.RegionID + ".aliyuncs.com"
+	request.Version = DefaultACKAPIVersion
+	request.PathPattern = "/api/v2/clusters/" + upstreamSpec.ClusterID + "/upgrade/resume"
+	request.Headers["Content-Type"] = "application/json"
+	_, err := svc.ProcessCommonRequest(request)
+	return err
+}
+
+func CancelUpgradeStatus(svc *sdk.Client, upstreamSpec *ackv1.ACKClusterConfigSpec) error {
+	request := requests.NewCommonRequest()
+	request.Method = "POST"
+	request.Scheme = "https" // https | http
+	request.Domain = "cs." + upstreamSpec.RegionID + ".aliyuncs.com"
+	request.Version = DefaultACKAPIVersion
+	request.PathPattern = "/api/v2/clusters/" + upstreamSpec.ClusterID + "/upgrade/cancel"
+	request.Headers["Content-Type"] = "application/json"
+	_, err := svc.ProcessCommonRequest(request)
+	return err
 }
