@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/alibabacloud-go/tea/tea"
 	"strconv"
 	"strings"
 	"time"
@@ -658,7 +657,6 @@ func UpgradeCluster(svc *sdk.Client, nextVersion string, upstreamSpec *ackv1.ACK
 
 	upgradeClusterRequest := &ackapi.UpgradeClusterRequest{
 		NextVersion: &nextVersion,
-		Version:     tea.String(upstreamSpec.KubernetesVersion),
 	}
 	content, err := json.Marshal(upgradeClusterRequest)
 	if err != nil {
