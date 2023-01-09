@@ -29,6 +29,8 @@ spec:
               cluster_id:
                 nullable: true
                 type: string
+              clusterIsUpgradeing:
+                type: boolean
               clusterType:
                 nullable: true
                 type: string
