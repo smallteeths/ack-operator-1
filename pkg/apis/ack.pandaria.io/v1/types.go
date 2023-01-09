@@ -71,8 +71,8 @@ type ACKClusterConfigSpec struct {
 	Imported                 bool           `json:"imported" norman:"noupdate"`
 	NodePoolList             []NodePoolInfo `json:"node_pool_list,omitempty"`
 	// Record the status of cluster upgrades
-	PauseClusterUpgrade bool `json:"pauseClusterUpgrade,omitempty"`
-	ClusterIsUpgradeing bool `json:"clusterIsUpgradeing,omitempty"`
+	PauseClusterUpgrade bool `json:"pauseClusterUpgrade"`
+	ClusterIsUpgradeing bool `json:"clusterIsUpgradeing"`
 }
 
 type ACKClusterConfigStatus struct {
