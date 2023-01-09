@@ -232,9 +232,20 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 	if err != nil {
 		return config, err
 	}
+	client, err := GetClient(h.secretsCache, &config.Spec)
+	if err != nil {
+		return config, err
+	}
+	upgradeStatus, err := ack.GetUpgradeStatus(client, &config.Spec)
+	if err != nil {
+		return config, err
+	}
+	logrus.Infof("upgradeStatus ------------ %+v", upgradeStatus)
+	logrus.Infof("*upgradeStatus.UpgradeTask.Status -------------- %+v", *upgradeStatus.UpgradeTask.Status)
 	if clusterState == ack.ClusterStatusUpdating ||
 		clusterState == ack.ClusterStatusScaling ||
-		clusterState == ack.ClusterStatusRemoving {
+		clusterState == ack.ClusterStatusRemoving ||
+		*upgradeStatus.UpgradeTask.Status == "running" {
 		// upstream cluster is already updating, must wait until sending next update
 		logrus.Infof("waiting for cluster [%s] to finish %s", config.Name, clusterState)
 		if config.Status.Phase != ackConfigUpdatingPhase {
@@ -434,15 +445,23 @@ func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *
 	if err != nil {
 		return configSpec, err
 	}
-	logrus.Infof("upgradeStatus %+v", upgradeStatus)
+	pauseClusterUpgrade := false
+	clusterIsUpgradeing := false
+	if *upgradeStatus.UpgradeTask.Status == "running" {
+		clusterIsUpgradeing = true
+	} else if *upgradeStatus.UpgradeTask.Status == "pause" {
+		pauseClusterUpgrade = true
+	}
 	newSpec := &ackv1.ACKClusterConfigSpec{
-		Name:              *cluster.Name,
-		ClusterID:         *cluster.ClusterId,
-		ClusterType:       *cluster.ClusterType,
-		KubernetesVersion: *cluster.CurrentVersion,
-		RegionID:          *cluster.RegionId,
-		VpcID:             *cluster.VpcId,
-		ZoneID:            *cluster.ZoneId,
+		Name:                *cluster.Name,
+		ClusterID:           *cluster.ClusterId,
+		ClusterType:         *cluster.ClusterType,
+		KubernetesVersion:   *cluster.CurrentVersion,
+		RegionID:            *cluster.RegionId,
+		VpcID:               *cluster.VpcId,
+		ZoneID:              *cluster.ZoneId,
+		PauseClusterUpgrade: pauseClusterUpgrade,
+		ClusterIsUpgradeing: clusterIsUpgradeing,
 	}
 	newSpec.NodePoolList, err = GetNodePoolConfigInfo(secretsCache, configSpec)
 	if err != nil {
@@ -626,21 +645,6 @@ func (h *Handler) createCASecret(config *ackv1.ACKClusterConfig, cluster *ackapi
 
 func IsNotFound(err error) bool {
 	if strings.Contains(err.Error(), "ErrorClusterNotFound") {
-		return true
-	}
-	return false
-}
-
-func needStopUpgradeCluster(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) bool {
-	client, err := GetClient(secretsCache, configSpec)
-	if err != nil {
-		return false
-	}
-	upgradeStatus, err := ack.GetUpgradeStatus(client, configSpec)
-	if err != nil {
-		return false
-	}
-	if *upgradeStatus.Status == "running" && configSpec.PauseClusterUpgrade {
 		return true
 	}
 	return false
