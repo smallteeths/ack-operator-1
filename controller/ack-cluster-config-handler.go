@@ -474,7 +474,7 @@ func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *
 		logrus.Infof("*upgradeStatus.Status -------------- %+v", status)
 		if *status == "running" {
 			clusterIsUpgradeing = true
-		} else if *status == "pause" || *status == "fail" {
+		} else if *status == "pause" {
 			pauseClusterUpgrade = true
 		}
 	}
