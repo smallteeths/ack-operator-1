@@ -233,6 +233,7 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 		return config, err
 	}
 	clusterIsUpgradeing := false
+	clusterUpgradeFail := false
 	if config.Spec.ClusterID != "" {
 		client, err := GetClient(h.secretsCache, &config.Spec)
 		if err != nil {
@@ -243,9 +244,12 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 			return config, err
 		}
 		logrus.Infof("upgradeStatus ------------ %+v", upgradeStatus)
-		status := upgradeStatus.UpgradeStep
+		status := upgradeStatus.Status
 		if *status == "running" {
 			clusterIsUpgradeing = true
+		}
+		if *status == "fail" {
+			clusterUpgradeFail = true
 		}
 	}
 
@@ -255,6 +259,16 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 		clusterIsUpgradeing {
 		// upstream cluster is already updating, must wait until sending next update
 		logrus.Infof("waiting for cluster [%s] to finish %s", config.Name, clusterState)
+		if config.Status.Phase != ackConfigUpdatingPhase {
+			config = config.DeepCopy()
+			config.Status.Phase = ackConfigUpdatingPhase
+			return h.ackCC.UpdateStatus(config)
+		}
+		h.ackEnqueueAfter(config.Namespace, config.Name, 30*time.Second)
+		return config, nil
+	}
+	if clusterUpgradeFail {
+		config.Status.FailureMessage = "Update ACK K8s version error!"
 		if config.Status.Phase != ackConfigUpdatingPhase {
 			config = config.DeepCopy()
 			config.Status.Phase = ackConfigUpdatingPhase
@@ -456,11 +470,11 @@ func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *
 			return configSpec, err
 		}
 		logrus.Infof("upgradeStatus ------------ %+v", upgradeStatus)
-		status := upgradeStatus.UpgradeStep
-		logrus.Infof("*upgradeStatus.UpgradeStep -------------- %+v", status)
+		status := upgradeStatus.Status
+		logrus.Infof("*upgradeStatus.Status -------------- %+v", status)
 		if *status == "running" {
 			clusterIsUpgradeing = true
-		} else if *status == "pause" {
+		} else if *status == "pause" || *status == "fail" {
 			pauseClusterUpgrade = true
 		}
 	}
