@@ -268,10 +268,10 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 		return config, nil
 	}
 	if clusterUpgradeFail {
-		config.Status.FailureMessage = "Update ACK K8s version error!"
 		if config.Status.Phase != ackConfigUpdatingPhase {
 			config = config.DeepCopy()
 			config.Status.Phase = ackConfigUpdatingPhase
+			config.Status.FailureMessage = "Update ACK K8s version error!"
 			return h.ackCC.UpdateStatus(config)
 		}
 		h.ackEnqueueAfter(config.Namespace, config.Name, 30*time.Second)
