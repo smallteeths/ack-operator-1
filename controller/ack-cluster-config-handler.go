@@ -232,20 +232,27 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 	if err != nil {
 		return config, err
 	}
-	client, err := GetClient(h.secretsCache, &config.Spec)
-	if err != nil {
-		return config, err
+	clusterIsUpgradeing := false
+	if config.Spec.ClusterID != "" {
+		client, err := GetClient(h.secretsCache, &config.Spec)
+		if err != nil {
+			return config, err
+		}
+		upgradeStatus, err := ack.GetUpgradeStatus(client, &config.Spec)
+		if err != nil {
+			return config, err
+		}
+		logrus.Infof("upgradeStatus ------------ %+v", upgradeStatus)
+		logrus.Infof("*upgradeStatus.UpgradeTask.Status -------------- %+v", *upgradeStatus.UpgradeTask.Status)
+		if *upgradeStatus.UpgradeTask.Status == "running" {
+			clusterIsUpgradeing = true
+		}
 	}
-	upgradeStatus, err := ack.GetUpgradeStatus(client, &config.Spec)
-	if err != nil {
-		return config, err
-	}
-	logrus.Infof("upgradeStatus ------------ %+v", upgradeStatus)
-	logrus.Infof("*upgradeStatus.UpgradeTask.Status -------------- %+v", *upgradeStatus.UpgradeTask.Status)
+
 	if clusterState == ack.ClusterStatusUpdating ||
 		clusterState == ack.ClusterStatusScaling ||
 		clusterState == ack.ClusterStatusRemoving ||
-		*upgradeStatus.UpgradeTask.Status == "running" {
+		clusterIsUpgradeing {
 		// upstream cluster is already updating, must wait until sending next update
 		logrus.Infof("waiting for cluster [%s] to finish %s", config.Name, clusterState)
 		if config.Status.Phase != ackConfigUpdatingPhase {
@@ -437,20 +444,22 @@ func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *
 	if err != nil {
 		return configSpec, err
 	}
-	client, err := GetClient(secretsCache, configSpec)
-	if err != nil {
-		return configSpec, err
-	}
-	upgradeStatus, err := ack.GetUpgradeStatus(client, configSpec)
-	if err != nil {
-		return configSpec, err
-	}
 	pauseClusterUpgrade := false
 	clusterIsUpgradeing := false
-	if *upgradeStatus.UpgradeTask.Status == "running" {
-		clusterIsUpgradeing = true
-	} else if *upgradeStatus.UpgradeTask.Status == "pause" {
-		pauseClusterUpgrade = true
+	if configSpec.ClusterID != "" {
+		client, err := GetClient(secretsCache, configSpec)
+		if err != nil {
+			return configSpec, err
+		}
+		upgradeStatus, err := ack.GetUpgradeStatus(client, configSpec)
+		if err != nil {
+			return configSpec, err
+		}
+		if *upgradeStatus.UpgradeTask.Status == "running" {
+			clusterIsUpgradeing = true
+		} else if *upgradeStatus.UpgradeTask.Status == "pause" {
+			pauseClusterUpgrade = true
+		}
 	}
 	newSpec := &ackv1.ACKClusterConfigSpec{
 		Name:                *cluster.Name,
