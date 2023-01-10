@@ -232,7 +232,7 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 	if err != nil {
 		return config, err
 	}
-	clusterIsUpgradeing := false
+	clusterIsUpgrading := false
 	clusterUpgradeFail := false
 	if config.Spec.ClusterID != "" {
 		client, err := GetClient(h.secretsCache, &config.Spec)
@@ -243,10 +243,9 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 		if err != nil {
 			return config, err
 		}
-		logrus.Infof("upgradeStatus ------------ %+v", upgradeStatus)
 		status := upgradeStatus.Status
 		if *status == "running" {
-			clusterIsUpgradeing = true
+			clusterIsUpgrading = true
 		}
 		if *status == "fail" {
 			clusterUpgradeFail = true
@@ -256,7 +255,7 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 	if clusterState == ack.ClusterStatusUpdating ||
 		clusterState == ack.ClusterStatusScaling ||
 		clusterState == ack.ClusterStatusRemoving ||
-		clusterIsUpgradeing {
+		clusterIsUpgrading {
 		// upstream cluster is already updating, must wait until sending next update
 		logrus.Infof("waiting for cluster [%s] to finish %s", config.Name, clusterState)
 		if config.Status.Phase != ackConfigUpdatingPhase {
@@ -459,7 +458,7 @@ func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *
 		return configSpec, err
 	}
 	pauseClusterUpgrade := false
-	clusterIsUpgradeing := false
+	clusterIsUpgrading := false
 	if configSpec.ClusterID != "" {
 		client, err := GetClient(secretsCache, configSpec)
 		if err != nil {
@@ -469,11 +468,10 @@ func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *
 		if err != nil {
 			return configSpec, err
 		}
-		logrus.Infof("upgradeStatus ------------ %+v", upgradeStatus)
+		logrus.Infof("Current upgradeStatus is %+v", upgradeStatus)
 		status := upgradeStatus.Status
-		logrus.Infof("*upgradeStatus.Status -------------- %+v", status)
 		if *status == "running" {
-			clusterIsUpgradeing = true
+			clusterIsUpgrading = true
 		} else if *status == "pause" {
 			pauseClusterUpgrade = true
 		}
@@ -487,7 +485,7 @@ func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *
 		VpcID:               *cluster.VpcId,
 		ZoneID:              *cluster.ZoneId,
 		PauseClusterUpgrade: pauseClusterUpgrade,
-		ClusterIsUpgradeing: clusterIsUpgradeing,
+		ClusterIsUpgrading:  clusterIsUpgrading,
 	}
 	newSpec.NodePoolList, err = GetNodePoolConfigInfo(secretsCache, configSpec)
 	if err != nil {
