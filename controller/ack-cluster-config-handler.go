@@ -244,7 +244,8 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 		}
 		logrus.Infof("upgradeStatus ------------ %+v", upgradeStatus)
 		logrus.Infof("*upgradeStatus.UpgradeTask.Status -------------- %+v", *upgradeStatus.UpgradeTask.Status)
-		if *upgradeStatus.UpgradeTask.Status == "running" {
+		status := upgradeStatus.UpgradeTask.Status
+		if *status == "running" {
 			clusterIsUpgradeing = true
 		}
 	}
@@ -455,9 +456,12 @@ func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *
 		if err != nil {
 			return configSpec, err
 		}
-		if *upgradeStatus.UpgradeTask.Status == "running" {
+		logrus.Infof("upgradeStatus ------------ %+v", upgradeStatus)
+		status := upgradeStatus.UpgradeTask.Status
+		logrus.Infof("*upgradeStatus.UpgradeTask.Status -------------- %+v", status)
+		if *status == "running" {
 			clusterIsUpgradeing = true
-		} else if *upgradeStatus.UpgradeTask.Status == "pause" {
+		} else if *status == "pause" {
 			pauseClusterUpgrade = true
 		}
 	}
