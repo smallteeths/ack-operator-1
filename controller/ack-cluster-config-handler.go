@@ -232,8 +232,8 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 	if err != nil {
 		return config, err
 	}
+	logrus.Infof("ackconfig cluster refersh updating %s", config.Name)
 	clusterIsUpgrading := false
-	clusterUpgradeFail := false
 	if config.Spec.ClusterID != "" {
 		client, err := GetClient(h.secretsCache, &config.Spec)
 		if err != nil {
@@ -248,7 +248,12 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 			clusterIsUpgrading = true
 		}
 		if *status == "fail" {
-			clusterUpgradeFail = true
+			config = config.DeepCopy()
+			config.Status.Phase = ackConfigUpdatingPhase
+			config.Status.FailureMessage = *upgradeStatus.ErrorMessage
+			config.Spec.ClusterIsUpgrading = false
+			config.Spec.PauseClusterUpgrade = false
+			return h.ackCC.UpdateStatus(config)
 		}
 	}
 
@@ -261,16 +266,6 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 		if config.Status.Phase != ackConfigUpdatingPhase {
 			config = config.DeepCopy()
 			config.Status.Phase = ackConfigUpdatingPhase
-			return h.ackCC.UpdateStatus(config)
-		}
-		h.ackEnqueueAfter(config.Namespace, config.Name, 30*time.Second)
-		return config, nil
-	}
-	if clusterUpgradeFail {
-		if config.Status.Phase != ackConfigUpdatingPhase {
-			config = config.DeepCopy()
-			config.Status.Phase = ackConfigUpdatingPhase
-			config.Status.FailureMessage = "Update ACK K8s version error!"
 			return h.ackCC.UpdateStatus(config)
 		}
 		h.ackEnqueueAfter(config.Namespace, config.Name, 30*time.Second)
