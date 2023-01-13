@@ -258,7 +258,7 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 				config.Spec.ClusterIsUpgrading = false
 				config.Spec.PauseClusterUpgrade = false
 				config.Status.Phase = ackConfigUpdatingPhase
-				config.Status.FailureMessage = *upgradeStatus.ErrorMessage
+				config.Status.FailureMessage = "aaaaabbbbccc"
 				logrus.Infof("error Message %+v", *upgradeStatus.ErrorMessage)
 				config, err = h.ackCC.Update(config)
 				return err
