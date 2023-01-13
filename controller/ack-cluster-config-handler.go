@@ -248,20 +248,22 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 			clusterIsUpgrading = true
 		}
 		if *status == "fail" {
-			err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-				var err error
-				config, err = h.ackCC.Get(config.Namespace, config.Name, metav1.GetOptions{})
-				if err != nil {
-					return err
-				}
-				config = config.DeepCopy()
-				config.Status.Phase = ackConfigActivePhase
-				config.Status.FailureMessage = *upgradeStatus.ErrorMessage
-				logrus.Infof("error Message %+v", *upgradeStatus.ErrorMessage)
-				config, err = h.ackCC.UpdateStatus(config)
-				logrus.Infof("config config ================== %+v", config.Status)
-				return err
-			})
+			if config.Status.FailureMessage == "" {
+				err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+					var innerErr error
+					config, innerErr = h.ackCC.Get(config.Namespace, config.Name, metav1.GetOptions{})
+					if innerErr != nil {
+						return innerErr
+					}
+					config = config.DeepCopy()
+					config.Status.Phase = ackConfigActivePhase
+					config.Status.FailureMessage = *upgradeStatus.ErrorMessage
+					logrus.Infof("error Message %+v", *upgradeStatus.ErrorMessage)
+					config, innerErr = h.ackCC.UpdateStatus(config)
+					logrus.Infof("config config ================== %+v", config.Status)
+					return innerErr
+				})
+			}
 			return config, err
 		}
 	}
