@@ -4,23 +4,23 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
+	ackapi "github.com/alibabacloud-go/cs-20151215/v3/client"
+	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
+	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	"github.com/cnrancher/ack-operator/internal/ack"
 	ackv1 "github.com/cnrancher/ack-operator/pkg/apis/ack.pandaria.io/v1"
 	v12 "github.com/cnrancher/ack-operator/pkg/generated/controllers/ack.pandaria.io/v1"
 	"github.com/cnrancher/ack-operator/utils"
-
-	ackapi "github.com/alibabacloud-go/cs-20151215/v3/client"
-	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
-	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	wranglerv1 "github.com/rancher/wrangler/pkg/generated/controllers/core/v1"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/retry"
@@ -103,6 +103,7 @@ func (h *Handler) recordError(onChange func(key string, config *ackv1.ACKCluster
 		}
 
 		if config.Status.FailureMessage == message {
+			logrus.Infof("hahahahaha")
 			return config, err
 		}
 
@@ -264,7 +265,8 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 					return innerErr
 				})
 			}
-			return config, err
+			updateErr := errors.New(*upgradeStatus.ErrorMessage)
+			return config, updateErr
 		}
 	}
 
@@ -666,7 +668,7 @@ func (h *Handler) createCASecret(config *ackv1.ACKClusterConfig, cluster *ackapi
 				"ca":       []byte(base64.StdEncoding.EncodeToString(restConfig.CAData)),
 			},
 		})
-	if errors.IsAlreadyExists(err) {
+	if k8serrors.IsAlreadyExists(err) {
 		logrus.Debugf("CA secret [%s] already exists, ignoring", config.Name)
 		return nil
 	}
