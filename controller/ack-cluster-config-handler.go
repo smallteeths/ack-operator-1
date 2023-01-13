@@ -248,7 +248,7 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 			clusterIsUpgrading = true
 		}
 		if *status == "fail" {
-			if config.Status.FailureMessage == "" {
+			if config.Status.Phase != ackConfigActivePhase && config.Status.FailureMessage == "" {
 				err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 					var innerErr error
 					config, innerErr = h.ackCC.Get(config.Namespace, config.Name, metav1.GetOptions{})
