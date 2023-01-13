@@ -107,6 +107,7 @@ func (h *Handler) recordError(onChange func(key string, config *ackv1.ACKCluster
 			return config, err
 		}
 
+		logrus.Infof("eeeeeee")
 		config = config.DeepCopy()
 
 		if message != "" {
@@ -249,23 +250,7 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 			clusterIsUpgrading = true
 		}
 		if *status == "fail" {
-			if config.Status.Phase != ackConfigActivePhase && config.Status.FailureMessage == "" {
-				err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-					var innerErr error
-					config, innerErr = h.ackCC.Get(config.Namespace, config.Name, metav1.GetOptions{})
-					if innerErr != nil {
-						return innerErr
-					}
-					config = config.DeepCopy()
-					config.Status.Phase = ackConfigActivePhase
-					config.Status.FailureMessage = *upgradeStatus.ErrorMessage
-					logrus.Infof("error Message %+v", *upgradeStatus.ErrorMessage)
-					config, innerErr = h.ackCC.UpdateStatus(config)
-					logrus.Infof("config config ================== %+v", config.Status)
-					return innerErr
-				})
-			}
-			updateErr := errors.New(*upgradeStatus.ErrorMessage)
+			updateErr := errors.New(fmt.Sprintf(`{"ACK K8S version upgrade error":"%s"}`, *upgradeStatus.ErrorMessage))
 			return config, updateErr
 		}
 	}
