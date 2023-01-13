@@ -255,7 +255,7 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 			config.Spec.ClusterIsUpgrading = false
 			config.Spec.PauseClusterUpgrade = false
 			logrus.Infof("ack config %+v", config)
-			return h.ackCC.UpdateStatus(config)
+			return h.ackCC.Update(config)
 		}
 	}
 
