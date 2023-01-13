@@ -248,18 +248,22 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 			clusterIsUpgrading = true
 		}
 		if *status == "fail" {
-			logrus.Infof("error Message %+v", *upgradeStatus.ErrorMessage)
-			config = config.DeepCopy()
-			config.Status.Phase = ackConfigUpdatingPhase
-			config.Status.FailureMessage = *upgradeStatus.ErrorMessage
-			config.Spec.ClusterIsUpgrading = false
-			config.Spec.PauseClusterUpgrade = false
-			ss, err := h.ackCC.Update(config)
-			if err != nil {
-				logrus.Infof("error :=============== %+v", err)
-				return config, err
-			}
-			return ss, err
+			err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				var err error
+				config, err = h.ackCC.Get(config.Namespace, config.Name, metav1.GetOptions{})
+				if err != nil {
+					return err
+				}
+				config = config.DeepCopy()
+				config.Spec.ClusterIsUpgrading = false
+				config.Spec.PauseClusterUpgrade = false
+				config.Status.Phase = ackConfigUpdatingPhase
+				config.Status.FailureMessage = *upgradeStatus.ErrorMessage
+				logrus.Infof("error Message %+v", *upgradeStatus.ErrorMessage)
+				config, err = h.ackCC.Update(config)
+				return err
+			})
+			return config, err
 		}
 	}
 
