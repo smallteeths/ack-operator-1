@@ -146,6 +146,26 @@ func (h *Handler) importCluster(config *ackv1.ACKClusterConfig) (*ackv1.ACKClust
 	if err != nil {
 		return config, err
 	}
+	pauseClusterUpgrade := false
+	clusterIsUpgrading := false
+	if *cluster.ClusterId != "" {
+		client, err := GetClient(h.secretsCache, &configUpdate.Spec)
+		if err != nil {
+			return config, err
+		}
+		upgradeStatus, err := ack.GetUpgradeStatus(client, &configUpdate.Spec)
+		if err != nil {
+			return config, err
+		}
+		status := upgradeStatus.Status
+		if *status == "running" {
+			clusterIsUpgrading = true
+		} else if *status == "pause" {
+			pauseClusterUpgrade = true
+		}
+		configUpdate.Spec.PauseClusterUpgrade = pauseClusterUpgrade
+		configUpdate.Spec.ClusterIsUpgrading = clusterIsUpgrading
+	}
 	configUpdate, err = h.ackCC.Update(configUpdate)
 	if err != nil {
 		return config, err
