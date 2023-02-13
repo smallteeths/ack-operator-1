@@ -5,7 +5,8 @@ ENV ARCH=${DAPPER_HOST_ARCH}
 
 RUN zypper -n update && \
     zypper search -s curl && \
-    zypper -n install bash git binutils glibc-devel-static gcc vim less file tar gzip sed curl wget ca-certificates
+    zypper -n install bash git binutils glibc-devel-static gcc vim less file tar gzip sed curl wget ca-certificates && \
+    zypper update curl sed bash ca-certificates
 
 ENV GOLANG_ARCH_amd64=amd64 GOLANG_ARCH_arm=armv6l GOLANG_ARCH_arm64=arm64 GOLANG_ARCH=GOLANG_ARCH_${ARCH} \
     GOPATH=/go PATH=/go/bin:/usr/local/go/bin:${PATH} SHELL=/bin/bash
