@@ -4,23 +4,23 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
+	ackapi "github.com/alibabacloud-go/cs-20151215/v3/client"
+	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
+	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	"github.com/cnrancher/ack-operator/internal/ack"
 	ackv1 "github.com/cnrancher/ack-operator/pkg/apis/ack.pandaria.io/v1"
 	v12 "github.com/cnrancher/ack-operator/pkg/generated/controllers/ack.pandaria.io/v1"
 	"github.com/cnrancher/ack-operator/utils"
-
-	ackapi "github.com/alibabacloud-go/cs-20151215/v3/client"
-	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
-	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	wranglerv1 "github.com/rancher/wrangler/pkg/generated/controllers/core/v1"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/retry"
@@ -143,6 +143,26 @@ func (h *Handler) importCluster(config *ackv1.ACKClusterConfig) (*ackv1.ACKClust
 	if err != nil {
 		return config, err
 	}
+	pauseClusterUpgrade := false
+	clusterIsUpgrading := false
+	if *cluster.ClusterId != "" {
+		client, err := GetClient(h.secretsCache, &configUpdate.Spec)
+		if err != nil {
+			return config, err
+		}
+		upgradeStatus, err := ack.GetUpgradeStatus(client, &configUpdate.Spec)
+		if err != nil {
+			return config, err
+		}
+		status := upgradeStatus.Status
+		if *status == ack.UpdateK8sRunningStatus {
+			clusterIsUpgrading = true
+		} else if *status == ack.UpdateK8sPauseStatus {
+			pauseClusterUpgrade = true
+		}
+		configUpdate.Spec.PauseClusterUpgrade = pauseClusterUpgrade
+		configUpdate.Spec.ClusterIsUpgrading = clusterIsUpgrading
+	}
 	configUpdate, err = h.ackCC.Update(configUpdate)
 	if err != nil {
 		return config, err
@@ -227,11 +247,51 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 	if err != nil {
 		return config, err
 	}
-
 	clusterState := utils.GetMapString("state", *cluster)
+	logrus.Infof("ackconfig cluster refersh updating %s", config.Name)
+	clusterIsUpgrading := false
+	client, err := GetClient(h.secretsCache, &config.Spec)
+	if err != nil {
+		return config, err
+	}
+	if config.Spec.ClusterID != "" {
+		upgradeStatus, err := ack.GetUpgradeStatus(client, &config.Spec)
+		if err != nil {
+			return config, err
+		}
+		status := upgradeStatus.Status
+		if *status == ack.UpdateK8sRunningStatus {
+			clusterIsUpgrading = true
+		}
+		if *status == ack.UpdateK8sPauseStatus {
+			updateErr := errors.New(fmt.Sprintf(`{"%s":"The cluster upgrade has been pause"}`, ack.UpdateK8SError))
+			return config, updateErr
+		}
+		if *status == ack.UpdateK8sFailStatus {
+			updateErr := errors.New(fmt.Sprintf(`{"%s":"%s"}`, ack.UpdateK8SError, *upgradeStatus.ErrorMessage))
+			return config, updateErr
+		}
+	}
+
+	// ACK k8s version update
+	if !clusterIsUpgrading &&
+		!config.Spec.PauseClusterUpgrade &&
+		!config.Spec.ClusterIsUpgrading &&
+		(config.Status.Phase == ackConfigActivePhase || strings.Contains(config.Status.FailureMessage, ack.UpdateK8SVersionApiError)) {
+		if config.Spec.KubernetesVersion != utils.GetMapString("current_version", *cluster) {
+			config.Status.Phase = ackConfigUpdatingPhase
+			if err = ack.UpgradeCluster(client, &config.Spec); err != nil {
+				updateErr := errors.New(fmt.Sprintf(`{"%s":"%s"}`, ack.UpdateK8SVersionApiError, err.Error()))
+				return config, updateErr
+			}
+			return h.ackCC.UpdateStatus(config)
+		}
+	}
+
 	if clusterState == ack.ClusterStatusUpdating ||
 		clusterState == ack.ClusterStatusScaling ||
-		clusterState == ack.ClusterStatusRemoving {
+		clusterState == ack.ClusterStatusRemoving ||
+		clusterIsUpgrading {
 		// upstream cluster is already updating, must wait until sending next update
 		logrus.Infof("waiting for cluster [%s] to finish %s", config.Name, clusterState)
 		if config.Status.Phase != ackConfigUpdatingPhase {
@@ -251,7 +311,6 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 		return config, err
 	}
 	config = updateConfig.DeepCopy()
-
 	nodePoolsInfo, err := GetNodePools(h.secretsCache, &config.Spec)
 	if err != nil {
 		return config, err
@@ -316,14 +375,7 @@ func (h *Handler) updateUpstreamClusterState(config *ackv1.ACKClusterConfig, ups
 		return config, err
 	}
 	if changed == ack.Changed {
-		configUpdate := config.DeepCopy()
-		configUpdate, err = h.ackCC.Update(configUpdate)
-		if err != nil {
-			return config, err
-		}
-		config = configUpdate.DeepCopy()
-		config.Status.Phase = ackConfigUpdatingPhase
-		return h.enqueueUpdate(config)
+		return h.setUpdatingPhase(config)
 	}
 
 	// no new updates, set to active
@@ -340,6 +392,17 @@ func (h *Handler) updateUpstreamClusterState(config *ackv1.ACKClusterConfig, ups
 	}
 
 	return config, nil
+}
+
+func (h *Handler) setUpdatingPhase(config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfig, error) {
+	configUpdate := config.DeepCopy()
+	configUpdate, err := h.ackCC.Update(configUpdate)
+	if err != nil {
+		return config, err
+	}
+	config = configUpdate.DeepCopy()
+	config.Status.Phase = ackConfigUpdatingPhase
+	return h.enqueueUpdate(config)
 }
 
 func (h *Handler) waitForCreationComplete(config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfig, error) {
@@ -419,14 +482,34 @@ func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *
 	if err != nil {
 		return configSpec, err
 	}
+	pauseClusterUpgrade := false
+	clusterIsUpgrading := false
+	if configSpec.ClusterID != "" {
+		client, err := GetClient(secretsCache, configSpec)
+		if err != nil {
+			return configSpec, err
+		}
+		upgradeStatus, err := ack.GetUpgradeStatus(client, configSpec)
+		if err != nil {
+			return configSpec, err
+		}
+		status := upgradeStatus.Status
+		if *status == ack.UpdateK8sRunningStatus {
+			clusterIsUpgrading = true
+		} else if *status == ack.UpdateK8sPauseStatus {
+			pauseClusterUpgrade = true
+		}
+	}
 	newSpec := &ackv1.ACKClusterConfigSpec{
-		Name:              *cluster.Name,
-		ClusterID:         *cluster.ClusterId,
-		ClusterType:       *cluster.ClusterType,
-		KubernetesVersion: *cluster.CurrentVersion,
-		RegionID:          *cluster.RegionId,
-		VpcID:             *cluster.VpcId,
-		ZoneID:            *cluster.ZoneId,
+		Name:                *cluster.Name,
+		ClusterID:           *cluster.ClusterId,
+		ClusterType:         *cluster.ClusterType,
+		KubernetesVersion:   *cluster.CurrentVersion,
+		RegionID:            *cluster.RegionId,
+		VpcID:               *cluster.VpcId,
+		ZoneID:              *cluster.ZoneId,
+		PauseClusterUpgrade: pauseClusterUpgrade,
+		ClusterIsUpgrading:  clusterIsUpgrading,
 	}
 	newSpec.NodePoolList, err = GetNodePoolConfigInfo(secretsCache, configSpec)
 	if err != nil {
@@ -456,7 +539,9 @@ func GetUserConfig(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClu
 func FixConfig(configSpec *ackv1.ACKClusterConfigSpec, clusterMap map[string]interface{}) *ackv1.ACKClusterConfigSpec {
 	// update known field from query result
 	configSpec.ClusterType = utils.GetMapString("cluster_type", clusterMap)
-	configSpec.KubernetesVersion = utils.GetMapString("current_version", clusterMap)
+	if configSpec.KubernetesVersion == "" {
+		configSpec.KubernetesVersion = utils.GetMapString("current_version", clusterMap)
+	}
 	configSpec.ZoneID = utils.GetMapString("zone_id", clusterMap)
 	configSpec.Name = utils.GetMapString("name", clusterMap)
 	configSpec.VswitchIds = strings.Split(utils.GetMapString("vswitch_id", clusterMap)+"", ",") // append empty string, avoid empty pointer value
@@ -601,7 +686,7 @@ func (h *Handler) createCASecret(config *ackv1.ACKClusterConfig, cluster *ackapi
 				"ca":       []byte(base64.StdEncoding.EncodeToString(restConfig.CAData)),
 			},
 		})
-	if errors.IsAlreadyExists(err) {
+	if k8serrors.IsAlreadyExists(err) {
 		logrus.Debugf("CA secret [%s] already exists, ignoring", config.Name)
 		return nil
 	}
