@@ -55,6 +55,14 @@ const (
 )
 
 const (
+	UpdateK8sRunningStatus   = "running"
+	UpdateK8sPauseStatus     = "pause"
+	UpdateK8sFailStatus      = "fail"
+	UpdateK8SError           = "Upgrade k8s version error"
+	UpdateK8SVersionApiError = "Please check that the version of k8s to be upgraded is entered correctly"
+)
+
+const (
 	waitSec      = 30
 	backoffSteps = 12
 )
