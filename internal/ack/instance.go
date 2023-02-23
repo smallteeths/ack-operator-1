@@ -199,3 +199,40 @@ func RemoveCluster(client *sdk.Client, configSpec *ackv1.ACKClusterConfigSpec) e
 		return true, nil
 	})
 }
+
+func GetUpgradeStatus(svc *sdk.Client, state *ackv1.ACKClusterConfigSpec) (*ackapi.GetUpgradeStatusResponseBody, error) {
+	request := requests.NewCommonRequest()
+	request.Method = "GET"
+	request.Scheme = "https" // https | http
+	request.Domain = "cs." + state.RegionID + ".aliyuncs.com"
+	request.Version = DefaultACKAPIVersion
+	request.PathPattern = "/api/v2/clusters/" + state.ClusterID + "/upgrade/status"
+	request.Headers["Content-Type"] = "application/json"
+
+	upgradeStatusResponseBody := &ackapi.GetUpgradeStatusResponseBody{}
+	if err := ProcessRequest(svc, request, upgradeStatusResponseBody); err != nil {
+		return nil, err
+	}
+	return upgradeStatusResponseBody, nil
+}
+
+func UpgradeCluster(svc *sdk.Client, upstreamSpec *ackv1.ACKClusterConfigSpec) error {
+	request := requests.NewCommonRequest()
+	request.Method = "POST"
+	request.Scheme = "https" // https | http
+	request.Domain = "cs." + upstreamSpec.RegionID + ".aliyuncs.com"
+	request.Version = DefaultACKAPIVersion
+	request.PathPattern = "/api/v2/clusters/" + upstreamSpec.ClusterID + "/upgrade"
+	request.Headers["Content-Type"] = "application/json"
+
+	upgradeClusterRequest := &ackapi.UpgradeClusterRequest{
+		NextVersion: &upstreamSpec.KubernetesVersion,
+	}
+	content, err := json.Marshal(upgradeClusterRequest)
+	if err != nil {
+		return err
+	}
+	request.Content = content
+	_, err = svc.ProcessCommonRequest(request)
+	return err
+}
