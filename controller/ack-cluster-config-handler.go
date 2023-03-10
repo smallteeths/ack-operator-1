@@ -317,7 +317,6 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 	}
 	for _, np := range nodePoolsInfo.Nodepools {
 		status := *np.Status.State
-		logrus.Infof("nodepool state [%s] np name %s", status, np.NodepoolInfo.Name)
 		if status == ack.NodePoolStatusScaling || status == ack.NodePoolStatusDeleting || status == ack.NodePoolStatusInitial || status == ack.NodePoolStatusUpdating || status == ack.NodePoolStatusRemoving {
 			if config.Status.Phase != ackConfigUpdatingPhase {
 				config = config.DeepCopy()
