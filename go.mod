@@ -10,7 +10,7 @@ require (
 	github.com/aliyun/alibaba-cloud-sdk-go v1.62.159
 	github.com/google/uuid v1.3.0
 	github.com/rancher/lasso v0.0.0-20221227210133-6ea88ca2fbcc
-	github.com/rancher/wrangler v1.1.0
+	github.com/rancher/wrangler v1.0.1-0.20230208234005-a59a11cc3ef5
 	github.com/rancher/wrangler-api v0.6.1-0.20200427172631-a7c2f09b783e
 	github.com/sirupsen/logrus v1.8.1
 	k8s.io/api v0.25.4
