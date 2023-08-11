@@ -478,7 +478,7 @@ func GetClusterWithParam(secretsCache wranglerv1.SecretCache, configSpec *ackv1.
 
 func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) (*ackv1.ACKClusterConfigSpec, error) {
 	cluster, err := GetCluster(secretsCache, configSpec)
-	if err != nil {
+	if err != nil || cluster == nil {
 		return configSpec, err
 	}
 	pauseClusterUpgrade := false
@@ -500,15 +500,32 @@ func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *
 		}
 	}
 	newSpec := &ackv1.ACKClusterConfigSpec{
-		Name:                *cluster.Name,
-		ClusterID:           *cluster.ClusterId,
-		ClusterType:         *cluster.ClusterType,
-		KubernetesVersion:   *cluster.CurrentVersion,
-		RegionID:            *cluster.RegionId,
-		VpcID:               *cluster.VpcId,
-		ZoneID:              *cluster.ZoneId,
 		PauseClusterUpgrade: pauseClusterUpgrade,
 		ClusterIsUpgrading:  clusterIsUpgrading,
+		Name:                "",
+		ClusterID:           "",
+		ClusterType:         "",
+		KubernetesVersion:   "",
+		RegionID:            "",
+		VpcID:               "",
+	}
+	if cluster.Name != nil {
+		newSpec.Name = *cluster.Name
+	}
+	if cluster.ClusterId != nil {
+		newSpec.ClusterID = *cluster.ClusterId
+	}
+	if cluster.ClusterType != nil {
+		newSpec.ClusterType = *cluster.ClusterType
+	}
+	if cluster.CurrentVersion != nil {
+		newSpec.KubernetesVersion = *cluster.CurrentVersion
+	}
+	if cluster.RegionId != nil {
+		newSpec.RegionID = *cluster.RegionId
+	}
+	if cluster.VpcId != nil {
+		newSpec.VpcID = *cluster.VpcId
 	}
 	newSpec.NodePoolList, err = GetNodePoolConfigInfo(secretsCache, configSpec)
 	if err != nil {
@@ -541,7 +558,6 @@ func FixConfig(configSpec *ackv1.ACKClusterConfigSpec, clusterMap map[string]int
 	if configSpec.KubernetesVersion == "" {
 		configSpec.KubernetesVersion = utils.GetMapString("current_version", clusterMap)
 	}
-	configSpec.ZoneID = utils.GetMapString("zone_id", clusterMap)
 	configSpec.Name = utils.GetMapString("name", clusterMap)
 	configSpec.VswitchIds = strings.Split(utils.GetMapString("vswitch_id", clusterMap)+"", ",") // append empty string, avoid empty pointer value
 	configSpec.ResourceGroupID = utils.GetMapString("resource_group_id", clusterMap)

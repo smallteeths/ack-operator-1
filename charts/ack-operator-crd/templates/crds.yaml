@@ -205,9 +205,6 @@ spec:
                   type: string
                 nullable: true
                 type: array
-              zoneId:
-                nullable: true
-                type: string
             type: object
           status:
             properties:
