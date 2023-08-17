@@ -44,4 +44,3 @@ spec:
   snatEntry: false
   sshFlags: false
   vpcId: "<cpcId>"
-  zoneId: "<zoneId>"
