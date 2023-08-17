@@ -54,7 +54,6 @@ func newClusterCreateRequest(configSpec *ackv1.ACKClusterConfigSpec) *ackapi.Cre
 	req.RegionId = tea.String(configSpec.RegionID)
 	req.KubernetesVersion = tea.String(configSpec.KubernetesVersion)
 	req.Vpcid = tea.String(configSpec.VpcID)
-	req.ZoneId = tea.String(configSpec.ZoneID)
 	req.ContainerCidr = tea.String(configSpec.ContainerCidr)
 	req.ServiceCidr = tea.String(configSpec.ServiceCidr)
 	req.NodeCidrMask = tea.String(strconv.Itoa(int(configSpec.NodeCidrMask)))

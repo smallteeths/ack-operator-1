@@ -42,7 +42,6 @@ type ACKClusterConfigSpec struct {
 	TimeoutMins              int64          `json:"timeoutMins,omitempty" norman:"noupdate"`
 	RegionID                 string         `json:"regionId,omitempty" norman:"noupdate"`
 	VpcID                    string         `json:"vpcId,omitempty" norman:"noupdate"`
-	ZoneID                   string         `json:"zoneId,omitempty" norman:"noupdate"`
 	ContainerCidr            string         `json:"containerCidr,omitempty" norman:"noupdate"`
 	ServiceCidr              string         `json:"serviceCidr,omitempty" norman:"noupdate"`
 	NodeCidrMask             int64          `json:"nodeCidrMask,omitempty" norman:"noupdate"`
