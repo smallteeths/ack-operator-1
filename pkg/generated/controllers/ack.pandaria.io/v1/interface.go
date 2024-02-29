@@ -21,7 +21,8 @@ package v1
 import (
 	v1 "github.com/cnrancher/ack-operator/pkg/apis/ack.pandaria.io/v1"
 	"github.com/rancher/lasso/pkg/controller"
-	"github.com/rancher/wrangler/pkg/schemes"
+	"github.com/rancher/wrangler/v2/pkg/generic"
+	"github.com/rancher/wrangler/v2/pkg/schemes"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -43,6 +44,6 @@ type version struct {
 	controllerFactory controller.SharedControllerFactory
 }
 
-func (c *version) ACKClusterConfig() ACKClusterConfigController {
-	return NewACKClusterConfigController(schema.GroupVersionKind{Group: "ack.pandaria.io", Version: "v1", Kind: "ACKClusterConfig"}, "ackclusterconfigs", true, c.controllerFactory)
+func (v *version) ACKClusterConfig() ACKClusterConfigController {
+	return generic.NewController[*v1.ACKClusterConfig, *v1.ACKClusterConfigList](schema.GroupVersionKind{Group: "ack.pandaria.io", Version: "v1", Kind: "ACKClusterConfig"}, "ackclusterconfigs", true, v.controllerFactory)
 }

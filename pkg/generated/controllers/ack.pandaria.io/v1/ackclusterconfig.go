@@ -20,262 +20,54 @@ package v1
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	v1 "github.com/cnrancher/ack-operator/pkg/apis/ack.pandaria.io/v1"
-	"github.com/rancher/lasso/pkg/client"
-	"github.com/rancher/lasso/pkg/controller"
-	"github.com/rancher/wrangler/pkg/apply"
-	"github.com/rancher/wrangler/pkg/condition"
-	"github.com/rancher/wrangler/pkg/generic"
-	"github.com/rancher/wrangler/pkg/kv"
+	"github.com/rancher/wrangler/v2/pkg/apply"
+	"github.com/rancher/wrangler/v2/pkg/condition"
+	"github.com/rancher/wrangler/v2/pkg/generic"
+	"github.com/rancher/wrangler/v2/pkg/kv"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/tools/cache"
 )
 
-type ACKClusterConfigHandler func(string, *v1.ACKClusterConfig) (*v1.ACKClusterConfig, error)
-
+// ACKClusterConfigController interface for managing ACKClusterConfig resources.
 type ACKClusterConfigController interface {
-	generic.ControllerMeta
-	ACKClusterConfigClient
-
-	OnChange(ctx context.Context, name string, sync ACKClusterConfigHandler)
-	OnRemove(ctx context.Context, name string, sync ACKClusterConfigHandler)
-	Enqueue(namespace, name string)
-	EnqueueAfter(namespace, name string, duration time.Duration)
-
-	Cache() ACKClusterConfigCache
+	generic.ControllerInterface[*v1.ACKClusterConfig, *v1.ACKClusterConfigList]
 }
 
+// ACKClusterConfigClient interface for managing ACKClusterConfig resources in Kubernetes.
 type ACKClusterConfigClient interface {
-	Create(*v1.ACKClusterConfig) (*v1.ACKClusterConfig, error)
-	Update(*v1.ACKClusterConfig) (*v1.ACKClusterConfig, error)
-	UpdateStatus(*v1.ACKClusterConfig) (*v1.ACKClusterConfig, error)
-	Delete(namespace, name string, options *metav1.DeleteOptions) error
-	Get(namespace, name string, options metav1.GetOptions) (*v1.ACKClusterConfig, error)
-	List(namespace string, opts metav1.ListOptions) (*v1.ACKClusterConfigList, error)
-	Watch(namespace string, opts metav1.ListOptions) (watch.Interface, error)
-	Patch(namespace, name string, pt types.PatchType, data []byte, subresources ...string) (result *v1.ACKClusterConfig, err error)
+	generic.ClientInterface[*v1.ACKClusterConfig, *v1.ACKClusterConfigList]
 }
 
+// ACKClusterConfigCache interface for retrieving ACKClusterConfig resources in memory.
 type ACKClusterConfigCache interface {
-	Get(namespace, name string) (*v1.ACKClusterConfig, error)
-	List(namespace string, selector labels.Selector) ([]*v1.ACKClusterConfig, error)
-
-	AddIndexer(indexName string, indexer ACKClusterConfigIndexer)
-	GetByIndex(indexName, key string) ([]*v1.ACKClusterConfig, error)
+	generic.CacheInterface[*v1.ACKClusterConfig]
 }
 
-type ACKClusterConfigIndexer func(obj *v1.ACKClusterConfig) ([]string, error)
-
-type aCKClusterConfigController struct {
-	controller    controller.SharedController
-	client        *client.Client
-	gvk           schema.GroupVersionKind
-	groupResource schema.GroupResource
-}
-
-func NewACKClusterConfigController(gvk schema.GroupVersionKind, resource string, namespaced bool, controller controller.SharedControllerFactory) ACKClusterConfigController {
-	c := controller.ForResourceKind(gvk.GroupVersion().WithResource(resource), gvk.Kind, namespaced)
-	return &aCKClusterConfigController{
-		controller: c,
-		client:     c.Client(),
-		gvk:        gvk,
-		groupResource: schema.GroupResource{
-			Group:    gvk.Group,
-			Resource: resource,
-		},
-	}
-}
-
-func FromACKClusterConfigHandlerToHandler(sync ACKClusterConfigHandler) generic.Handler {
-	return func(key string, obj runtime.Object) (ret runtime.Object, err error) {
-		var v *v1.ACKClusterConfig
-		if obj == nil {
-			v, err = sync(key, nil)
-		} else {
-			v, err = sync(key, obj.(*v1.ACKClusterConfig))
-		}
-		if v == nil {
-			return nil, err
-		}
-		return v, err
-	}
-}
-
-func (c *aCKClusterConfigController) Updater() generic.Updater {
-	return func(obj runtime.Object) (runtime.Object, error) {
-		newObj, err := c.Update(obj.(*v1.ACKClusterConfig))
-		if newObj == nil {
-			return nil, err
-		}
-		return newObj, err
-	}
-}
-
-func UpdateACKClusterConfigDeepCopyOnChange(client ACKClusterConfigClient, obj *v1.ACKClusterConfig, handler func(obj *v1.ACKClusterConfig) (*v1.ACKClusterConfig, error)) (*v1.ACKClusterConfig, error) {
-	if obj == nil {
-		return obj, nil
-	}
-
-	copyObj := obj.DeepCopy()
-	newObj, err := handler(copyObj)
-	if newObj != nil {
-		copyObj = newObj
-	}
-	if obj.ResourceVersion == copyObj.ResourceVersion && !equality.Semantic.DeepEqual(obj, copyObj) {
-		return client.Update(copyObj)
-	}
-
-	return copyObj, err
-}
-
-func (c *aCKClusterConfigController) AddGenericHandler(ctx context.Context, name string, handler generic.Handler) {
-	c.controller.RegisterHandler(ctx, name, controller.SharedControllerHandlerFunc(handler))
-}
-
-func (c *aCKClusterConfigController) AddGenericRemoveHandler(ctx context.Context, name string, handler generic.Handler) {
-	c.AddGenericHandler(ctx, name, generic.NewRemoveHandler(name, c.Updater(), handler))
-}
-
-func (c *aCKClusterConfigController) OnChange(ctx context.Context, name string, sync ACKClusterConfigHandler) {
-	c.AddGenericHandler(ctx, name, FromACKClusterConfigHandlerToHandler(sync))
-}
-
-func (c *aCKClusterConfigController) OnRemove(ctx context.Context, name string, sync ACKClusterConfigHandler) {
-	c.AddGenericHandler(ctx, name, generic.NewRemoveHandler(name, c.Updater(), FromACKClusterConfigHandlerToHandler(sync)))
-}
-
-func (c *aCKClusterConfigController) Enqueue(namespace, name string) {
-	c.controller.Enqueue(namespace, name)
-}
-
-func (c *aCKClusterConfigController) EnqueueAfter(namespace, name string, duration time.Duration) {
-	c.controller.EnqueueAfter(namespace, name, duration)
-}
-
-func (c *aCKClusterConfigController) Informer() cache.SharedIndexInformer {
-	return c.controller.Informer()
-}
-
-func (c *aCKClusterConfigController) GroupVersionKind() schema.GroupVersionKind {
-	return c.gvk
-}
-
-func (c *aCKClusterConfigController) Cache() ACKClusterConfigCache {
-	return &aCKClusterConfigCache{
-		indexer:  c.Informer().GetIndexer(),
-		resource: c.groupResource,
-	}
-}
-
-func (c *aCKClusterConfigController) Create(obj *v1.ACKClusterConfig) (*v1.ACKClusterConfig, error) {
-	result := &v1.ACKClusterConfig{}
-	return result, c.client.Create(context.TODO(), obj.Namespace, obj, result, metav1.CreateOptions{})
-}
-
-func (c *aCKClusterConfigController) Update(obj *v1.ACKClusterConfig) (*v1.ACKClusterConfig, error) {
-	result := &v1.ACKClusterConfig{}
-	return result, c.client.Update(context.TODO(), obj.Namespace, obj, result, metav1.UpdateOptions{})
-}
-
-func (c *aCKClusterConfigController) UpdateStatus(obj *v1.ACKClusterConfig) (*v1.ACKClusterConfig, error) {
-	result := &v1.ACKClusterConfig{}
-	return result, c.client.UpdateStatus(context.TODO(), obj.Namespace, obj, result, metav1.UpdateOptions{})
-}
-
-func (c *aCKClusterConfigController) Delete(namespace, name string, options *metav1.DeleteOptions) error {
-	if options == nil {
-		options = &metav1.DeleteOptions{}
-	}
-	return c.client.Delete(context.TODO(), namespace, name, *options)
-}
-
-func (c *aCKClusterConfigController) Get(namespace, name string, options metav1.GetOptions) (*v1.ACKClusterConfig, error) {
-	result := &v1.ACKClusterConfig{}
-	return result, c.client.Get(context.TODO(), namespace, name, result, options)
-}
-
-func (c *aCKClusterConfigController) List(namespace string, opts metav1.ListOptions) (*v1.ACKClusterConfigList, error) {
-	result := &v1.ACKClusterConfigList{}
-	return result, c.client.List(context.TODO(), namespace, result, opts)
-}
-
-func (c *aCKClusterConfigController) Watch(namespace string, opts metav1.ListOptions) (watch.Interface, error) {
-	return c.client.Watch(context.TODO(), namespace, opts)
-}
-
-func (c *aCKClusterConfigController) Patch(namespace, name string, pt types.PatchType, data []byte, subresources ...string) (*v1.ACKClusterConfig, error) {
-	result := &v1.ACKClusterConfig{}
-	return result, c.client.Patch(context.TODO(), namespace, name, pt, data, result, metav1.PatchOptions{}, subresources...)
-}
-
-type aCKClusterConfigCache struct {
-	indexer  cache.Indexer
-	resource schema.GroupResource
-}
-
-func (c *aCKClusterConfigCache) Get(namespace, name string) (*v1.ACKClusterConfig, error) {
-	obj, exists, err := c.indexer.GetByKey(namespace + "/" + name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(c.resource, name)
-	}
-	return obj.(*v1.ACKClusterConfig), nil
-}
-
-func (c *aCKClusterConfigCache) List(namespace string, selector labels.Selector) (ret []*v1.ACKClusterConfig, err error) {
-
-	err = cache.ListAllByNamespace(c.indexer, namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.ACKClusterConfig))
-	})
-
-	return ret, err
-}
-
-func (c *aCKClusterConfigCache) AddIndexer(indexName string, indexer ACKClusterConfigIndexer) {
-	utilruntime.Must(c.indexer.AddIndexers(map[string]cache.IndexFunc{
-		indexName: func(obj interface{}) (strings []string, e error) {
-			return indexer(obj.(*v1.ACKClusterConfig))
-		},
-	}))
-}
-
-func (c *aCKClusterConfigCache) GetByIndex(indexName, key string) (result []*v1.ACKClusterConfig, err error) {
-	objs, err := c.indexer.ByIndex(indexName, key)
-	if err != nil {
-		return nil, err
-	}
-	result = make([]*v1.ACKClusterConfig, 0, len(objs))
-	for _, obj := range objs {
-		result = append(result, obj.(*v1.ACKClusterConfig))
-	}
-	return result, nil
-}
-
+// ACKClusterConfigStatusHandler is executed for every added or modified ACKClusterConfig. Should return the new status to be updated
 type ACKClusterConfigStatusHandler func(obj *v1.ACKClusterConfig, status v1.ACKClusterConfigStatus) (v1.ACKClusterConfigStatus, error)
 
+// ACKClusterConfigGeneratingHandler is the top-level handler that is executed for every ACKClusterConfig event. It extends ACKClusterConfigStatusHandler by a returning a slice of child objects to be passed to apply.Apply
 type ACKClusterConfigGeneratingHandler func(obj *v1.ACKClusterConfig, status v1.ACKClusterConfigStatus) ([]runtime.Object, v1.ACKClusterConfigStatus, error)
 
+// RegisterACKClusterConfigStatusHandler configures a ACKClusterConfigController to execute a ACKClusterConfigStatusHandler for every events observed.
+// If a non-empty condition is provided, it will be updated in the status conditions for every handler execution
 func RegisterACKClusterConfigStatusHandler(ctx context.Context, controller ACKClusterConfigController, condition condition.Cond, name string, handler ACKClusterConfigStatusHandler) {
 	statusHandler := &aCKClusterConfigStatusHandler{
 		client:    controller,
 		condition: condition,
 		handler:   handler,
 	}
-	controller.AddGenericHandler(ctx, name, FromACKClusterConfigHandlerToHandler(statusHandler.sync))
+	controller.AddGenericHandler(ctx, name, generic.FromObjectHandlerToHandler(statusHandler.sync))
 }
 
+// RegisterACKClusterConfigGeneratingHandler configures a ACKClusterConfigController to execute a ACKClusterConfigGeneratingHandler for every events observed, passing the returned objects to the provided apply.Apply.
+// If a non-empty condition is provided, it will be updated in the status conditions for every handler execution
 func RegisterACKClusterConfigGeneratingHandler(ctx context.Context, controller ACKClusterConfigController, apply apply.Apply,
 	condition condition.Cond, name string, handler ACKClusterConfigGeneratingHandler, opts *generic.GeneratingHandlerOptions) {
 	statusHandler := &aCKClusterConfigGeneratingHandler{
@@ -297,6 +89,7 @@ type aCKClusterConfigStatusHandler struct {
 	handler   ACKClusterConfigStatusHandler
 }
 
+// sync is executed on every resource addition or modification. Executes the configured handlers and sends the updated status to the Kubernetes API
 func (a *aCKClusterConfigStatusHandler) sync(key string, obj *v1.ACKClusterConfig) (*v1.ACKClusterConfig, error) {
 	if obj == nil {
 		return obj, nil
@@ -342,8 +135,10 @@ type aCKClusterConfigGeneratingHandler struct {
 	opts  generic.GeneratingHandlerOptions
 	gvk   schema.GroupVersionKind
 	name  string
+	seen  sync.Map
 }
 
+// Remove handles the observed deletion of a resource, cascade deleting every associated resource previously applied
 func (a *aCKClusterConfigGeneratingHandler) Remove(key string, obj *v1.ACKClusterConfig) (*v1.ACKClusterConfig, error) {
 	if obj != nil {
 		return obj, nil
@@ -353,12 +148,17 @@ func (a *aCKClusterConfigGeneratingHandler) Remove(key string, obj *v1.ACKCluste
 	obj.Namespace, obj.Name = kv.RSplit(key, "/")
 	obj.SetGroupVersionKind(a.gvk)
 
+	if a.opts.UniqueApplyForResourceVersion {
+		a.seen.Delete(key)
+	}
+
 	return nil, generic.ConfigureApplyForObject(a.apply, obj, &a.opts).
 		WithOwner(obj).
 		WithSetID(a.name).
 		ApplyObjects()
 }
 
+// Handle executes the configured ACKClusterConfigGeneratingHandler and pass the resulting objects to apply.Apply, finally returning the new status of the resource
 func (a *aCKClusterConfigGeneratingHandler) Handle(obj *v1.ACKClusterConfig, status v1.ACKClusterConfigStatus) (v1.ACKClusterConfigStatus, error) {
 	if !obj.DeletionTimestamp.IsZero() {
 		return status, nil
@@ -368,9 +168,41 @@ func (a *aCKClusterConfigGeneratingHandler) Handle(obj *v1.ACKClusterConfig, sta
 	if err != nil {
 		return newStatus, err
 	}
+	if !a.isNewResourceVersion(obj) {
+		return newStatus, nil
+	}
 
-	return newStatus, generic.ConfigureApplyForObject(a.apply, obj, &a.opts).
+	err = generic.ConfigureApplyForObject(a.apply, obj, &a.opts).
 		WithOwner(obj).
 		WithSetID(a.name).
 		ApplyObjects(objs...)
+	if err != nil {
+		return newStatus, err
+	}
+	a.storeResourceVersion(obj)
+	return newStatus, nil
+}
+
+// isNewResourceVersion detects if a specific resource version was already successfully processed.
+// Only used if UniqueApplyForResourceVersion is set in generic.GeneratingHandlerOptions
+func (a *aCKClusterConfigGeneratingHandler) isNewResourceVersion(obj *v1.ACKClusterConfig) bool {
+	if !a.opts.UniqueApplyForResourceVersion {
+		return true
+	}
+
+	// Apply once per resource version
+	key := obj.Namespace + "/" + obj.Name
+	previous, ok := a.seen.Load(key)
+	return !ok || previous != obj.ResourceVersion
+}
+
+// storeResourceVersion keeps track of the latest resource version of an object for which Apply was executed
+// Only used if UniqueApplyForResourceVersion is set in generic.GeneratingHandlerOptions
+func (a *aCKClusterConfigGeneratingHandler) storeResourceVersion(obj *v1.ACKClusterConfig) {
+	if !a.opts.UniqueApplyForResourceVersion {
+		return
+	}
+
+	key := obj.Namespace + "/" + obj.Name
+	a.seen.Store(key, obj.ResourceVersion)
 }

@@ -16,10 +16,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rancher/wrangler-api/pkg/generated/controllers/apps"
-	core3 "github.com/rancher/wrangler/pkg/generated/controllers/core"
-	"github.com/rancher/wrangler/pkg/kubeconfig"
-	"github.com/rancher/wrangler/pkg/signals"
-	"github.com/rancher/wrangler/pkg/start"
+	core3 "github.com/rancher/wrangler/v2/pkg/generated/controllers/core"
+	"github.com/rancher/wrangler/v2/pkg/kubeconfig"
+	"github.com/rancher/wrangler/v2/pkg/signals"
+	"github.com/rancher/wrangler/v2/pkg/start"
 	"github.com/sirupsen/logrus"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -109,7 +109,7 @@ func main() {
 		logrus.Infof("leader election is ON.")
 
 		lock, lockErr := resourcelock.New(
-			resourcelock.ConfigMapsLeasesResourceLock,
+			resourcelock.LeasesResourceLock,
 			lockNamespace,
 			lockName,
 			client.CoreV1(),
