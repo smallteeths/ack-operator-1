@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/aliyun/alibaba-cloud-sdk-go/services/sts"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/retry"
 )
@@ -486,8 +488,53 @@ func GetClient(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKCluster
 			string(accessKeyBytes),
 			string(secretKeyBytes),
 		)
+	} else if configSpec.AccountID != "" && configSpec.RoleName != "" {
+		secrets, err := secretsCache.List("cattle-global-data", labels.NewSelector())
+		if err != nil {
+			return nil, err
+		}
+		for _, secret := range secrets {
+			if val, exists := secret.Annotations["provisioning.cattle.io/pandaria-aliyun-sst"]; exists && val == "true" {
+				accessKeyBytes := secret.Data["aliyunecscredentialConfig-accessKeyId"]
+				secretKeyBytes := secret.Data["aliyunecscredentialConfig-accessKeySecret"]
+				// Get sts token
+				client, err := ack.GetACKSTSClient(
+					configSpec.RegionID,
+					string(accessKeyBytes),
+					string(secretKeyBytes),
+				)
+				if err != nil {
+					return nil, err
+				}
+				stsAccessKeyId, stsAccessKeySecret, err := getSTSCredential(client, configSpec.AccountID, configSpec.RoleName)
+				if err != nil {
+					return nil, err
+				}
+				return ack.GetACKClient(
+					configSpec.RegionID,
+					stsAccessKeyId,
+					stsAccessKeySecret,
+				)
+			}
+		}
+
 	}
 	return nil, fmt.Errorf("error while getting aliyunCredentialSecret")
+}
+
+func getSTSCredential(client *sts.Client, accountID, roleName string) (accessKeyId, accessKeySecret string, err error) {
+	roleArn := fmt.Sprintf("acs:ram::%s:role/%s", accountID, roleName)
+	request := sts.CreateAssumeRoleRequest()
+	request.Scheme = "https"
+	request.RoleArn = roleArn
+	request.RoleSessionName = roleName
+
+	response, err := client.AssumeRole(request)
+	if err != nil {
+		logrus.Errorf("Error get sts token failure message: %s", err.Error())
+		return "", "", err
+	}
+	return response.Credentials.AccessKeyId, response.Credentials.AccessKeySecret, nil
 }
 
 func GetCluster(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) (*ackapi.DescribeClusterDetailResponseBody, error) {
