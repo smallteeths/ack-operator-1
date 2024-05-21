@@ -6,18 +6,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/aliyun/alibaba-cloud-sdk-go/services/sts"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	ackapi "github.com/alibabacloud-go/cs-20151215/v3/client"
 	"github.com/alibabacloud-go/tea/tea"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
+	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/auth/credentials"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
+	"github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
+	"github.com/aliyun/alibaba-cloud-sdk-go/services/sts"
 	"github.com/cnrancher/ack-operator/internal/ack"
 	ackv1 "github.com/cnrancher/ack-operator/pkg/apis/ack.pandaria.io/v1"
 	v12 "github.com/cnrancher/ack-operator/pkg/generated/controllers/ack.pandaria.io/v1"
+	"github.com/cnrancher/ack-operator/store"
 	"github.com/cnrancher/ack-operator/utils"
 	wranglerv1 "github.com/rancher/wrangler/v2/pkg/generated/controllers/core/v1"
 	"github.com/sirupsen/logrus"
@@ -39,7 +43,18 @@ const (
 	ackConfigUpdatingPhase   = "updating"
 	ackConfigImportingPhase  = "importing"
 	wait                     = 30
+	defaultRegion            = "cn-hangzhou"
+	defaultAPIScheme         = "https"
 )
+
+var (
+	secretStore *store.StsTokenStore
+	once        sync.Once
+)
+
+func initSecretStore() {
+	secretStore = store.NewStsTokenStore()
+}
 
 type Handler struct {
 	ackCC           v12.ACKClusterConfigClient
@@ -54,6 +69,7 @@ func Register(
 	secrets wranglerv1.SecretController,
 	ack v12.ACKClusterConfigController) {
 
+	once.Do(initSecretStore)
 	controller := &Handler{
 		ackCC:           ack,
 		ackEnqueue:      ack.Enqueue,
@@ -495,25 +511,25 @@ func GetClient(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKCluster
 		}
 		for _, secret := range secrets {
 			if val, exists := secret.Annotations["provisioning.cattle.io/pandaria-aliyun-sst"]; exists && val == "true" {
-				accessKeyBytes := secret.Data["aliyunecscredentialConfig-accessKeyId"]
-				secretKeyBytes := secret.Data["aliyunecscredentialConfig-accessKeySecret"]
-				// Get sts token
-				client, err := ack.GetACKSTSClient(
-					configSpec.RegionID,
-					string(accessKeyBytes),
-					string(secretKeyBytes),
-				)
-				if err != nil {
-					return nil, err
-				}
-				stsAccessKeyId, stsAccessKeySecret, err := getSTSCredential(client, configSpec.AccountID, configSpec.RoleName)
-				if err != nil {
-					return nil, err
+
+				stsToken, exists := secretStore.GetAk(secret.Name)
+				if !exists || checkSTSToken(stsToken) != nil {
+					// If the STS token is not found for the first time or checkSTSToken fails (possibly due to the STS token expiration).
+					// then retrieve it again.
+					if err := setSTStoMap(secret, configSpec.AccountID, configSpec.RoleName, configSpec.RegionID); err != nil {
+						return nil, err
+					}
+
+					// Retrieve the STS token again.
+					stsToken, _ = secretStore.GetAk(secret.Name)
+					if err := checkSTSToken(stsToken); err != nil {
+						return nil, err
+					}
 				}
 				return ack.GetACKClient(
 					configSpec.RegionID,
-					stsAccessKeyId,
-					stsAccessKeySecret,
+					stsToken.AK,
+					stsToken.SK,
 				)
 			}
 		}
@@ -525,7 +541,7 @@ func GetClient(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKCluster
 func getSTSCredential(client *sts.Client, accountID, roleName string) (accessKeyId, accessKeySecret string, err error) {
 	roleArn := fmt.Sprintf("acs:ram::%s:role/%s", accountID, roleName)
 	request := sts.CreateAssumeRoleRequest()
-	request.Scheme = "https"
+	request.Scheme = defaultAPIScheme
 	request.RoleArn = roleArn
 	request.RoleSessionName = roleName
 
@@ -735,7 +751,7 @@ func (h *Handler) createCASecret(config *ackv1.ACKClusterConfig, cluster *ackapi
 
 	request := requests.NewCommonRequest()
 	request.Method = "GET"
-	request.Scheme = "https"
+	request.Scheme = defaultAPIScheme
 	request.Domain = "cs." + config.Spec.RegionID + ".aliyuncs.com"
 	request.Version = ack.DefaultACKAPIVersion
 	request.PathPattern = "/k8s/" + config.Spec.ClusterID + "/user_config"
@@ -789,4 +805,50 @@ func IsNotFound(err error) bool {
 		return true
 	}
 	return false
+}
+
+func checkSTSToken(stsToken store.StsToken) error {
+	client, err := ecs.NewClientWithAccessKey(
+		defaultRegion,
+		stsToken.AK,
+		stsToken.SK,
+	)
+	if err != nil {
+		return err
+	}
+	request := ecs.CreateDescribeRegionsRequest()
+	request.Scheme = defaultAPIScheme
+
+	_, err = client.DescribeRegions(request)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func setSTStoMap(cc *corev1.Secret, accountID, roleName, regionID string) error {
+	stsAk := string(cc.Data["aliyunecscredentialConfig-accessKeyId"])
+	stsSk := string(cc.Data["aliyunecscredentialConfig-accessKeySecret"])
+	client, err := getACKSTSClient(regionID, stsAk, stsSk)
+	if err != nil {
+		return fmt.Errorf("error get sts token error secret Name: %s", cc.Name)
+	}
+	ak, sk, err := getSTSCredential(client, accountID, roleName)
+	if err != nil {
+		return fmt.Errorf("error get sts token error secret Name: %s", cc.Name)
+	}
+	secretStore.SetAk(cc.Name, store.StsToken{
+		AK: ak,
+		SK: sk,
+	})
+	return nil
+}
+
+func getACKSTSClient(regionID, accessKeyID, accessKeySecret string) (*sts.Client, error) {
+	if regionID == "" {
+		regionID = defaultRegion
+	}
+	config := sdk.NewConfig()
+	credential := credentials.NewAccessKeyCredential(accessKeyID, accessKeySecret)
+	return sts.NewClientWithOptions(regionID, config, credential)
 }
