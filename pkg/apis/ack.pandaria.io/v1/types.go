@@ -36,7 +36,7 @@ type ACKClusterConfigSpec struct {
 	Name                     string         `json:"name,omitempty"`
 	ClusterID                string         `json:"cluster_id,omitempty" norman:"noupdate"`
 	AliyunCredentialSecret   string         `json:"aliyun_credential_secret,omitempty"`
-	RoleName                 string         `json:"role_Name,omitempty"`
+	RoleName                 string         `json:"role_name,omitempty"`
 	AccountID                string         `json:"account_id,omitempty"`
 	DisableRollback          bool           `json:"disableRollback"`
 	ClusterType              string         `json:"clusterType,omitempty" norman:"noupdate"`

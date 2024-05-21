@@ -187,7 +187,7 @@ spec:
               resourceGroupId:
                 nullable: true
                 type: string
-              role_Name:
+              role_name:
                 nullable: true
                 type: string
               securityGroupId:
