@@ -503,6 +503,7 @@ func GetClient(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKCluster
 			configSpec.RegionID,
 			string(accessKeyBytes),
 			string(secretKeyBytes),
+			"",
 		)
 	} else if configSpec.AccountID != "" && configSpec.RoleName != "" {
 		secrets, err := secretsCache.List("cattle-global-data", labels.NewSelector())
@@ -530,6 +531,7 @@ func GetClient(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKCluster
 					configSpec.RegionID,
 					stsToken.AK,
 					stsToken.SK,
+					stsToken.Token,
 				)
 			}
 		}
@@ -538,7 +540,7 @@ func GetClient(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKCluster
 	return nil, fmt.Errorf("error while getting aliyunCredentialSecret")
 }
 
-func getSTSCredential(client *sts.Client, accountID, roleName string) (accessKeyId, accessKeySecret string, err error) {
+func getSTSCredential(client *sts.Client, accountID, roleName string) (accessKeyId, accessKeySecret, token string, err error) {
 	roleArn := fmt.Sprintf("acs:ram::%s:role/%s", accountID, roleName)
 	request := sts.CreateAssumeRoleRequest()
 	request.Scheme = defaultAPIScheme
@@ -548,9 +550,9 @@ func getSTSCredential(client *sts.Client, accountID, roleName string) (accessKey
 	response, err := client.AssumeRole(request)
 	if err != nil {
 		logrus.Errorf("Error get sts token failure message: %s", err.Error())
-		return "", "", err
+		return "", "", "", err
 	}
-	return response.Credentials.AccessKeyId, response.Credentials.AccessKeySecret, nil
+	return response.Credentials.AccessKeyId, response.Credentials.AccessKeySecret, response.Credentials.SecurityToken, nil
 }
 
 func GetCluster(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) (*ackapi.DescribeClusterDetailResponseBody, error) {
@@ -833,13 +835,14 @@ func setSTStoMap(cc *corev1.Secret, accountID, roleName, regionID string) error 
 	if err != nil {
 		return fmt.Errorf("error get sts token error secret Name: %s", cc.Name)
 	}
-	ak, sk, err := getSTSCredential(client, accountID, roleName)
+	ak, sk, token, err := getSTSCredential(client, accountID, roleName)
 	if err != nil {
 		return fmt.Errorf("error get sts token error secret Name: %s", cc.Name)
 	}
 	secretStore.SetAk(cc.Name, store.StsToken{
-		AK: ak,
-		SK: sk,
+		AK:    ak,
+		SK:    sk,
+		Token: token,
 	})
 	return nil
 }

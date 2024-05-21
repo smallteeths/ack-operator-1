@@ -5,8 +5,9 @@ import (
 )
 
 type StsToken struct {
-	AK string
-	SK string
+	AK    string
+	SK    string
+	Token string
 }
 
 type StsTokenStore struct {
