@@ -512,6 +512,9 @@ func GetClient(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKCluster
 		for _, secret := range secrets {
 			if val, exists := secret.Annotations["provisioning.cattle.io/pandaria-aliyun-sst"]; exists && val == "true" {
 
+				if innerSecretStore == nil {
+					return nil, fmt.Errorf("The StsTokenStore is nil get sts token error")
+				}
 				stsToken, exists := innerSecretStore.GetAk(secret.Name)
 				if !exists || checkSTSToken(stsToken) != nil {
 					// If the STS token is not found for the first time or checkSTSToken fails (possibly due to the STS token expiration).
