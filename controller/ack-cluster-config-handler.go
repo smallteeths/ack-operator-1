@@ -90,16 +90,15 @@ func (h *Handler) OnAckConfigChanged(key string, config *ackv1.ACKClusterConfig)
 	if config.DeletionTimestamp != nil {
 		return nil, nil
 	}
-
 	switch config.Status.Phase {
 	case ackConfigImportingPhase:
-		return h.importCluster(config)
+		return h.importCluster(config, secretStore)
 	case ackConfigNotCreatedPhase:
-		return h.create(config)
+		return h.create(config, secretStore)
 	case ackConfigCreatingPhase:
-		return h.waitForCreationComplete(config)
+		return h.waitForCreationComplete(config, secretStore)
 	case ackConfigActivePhase, ackConfigUpdatingPhase:
-		return h.checkAndUpdate(config)
+		return h.checkAndUpdate(config, secretStore)
 	}
 
 	return config, nil
@@ -145,8 +144,8 @@ func (h *Handler) recordError(onChange func(key string, config *ackv1.ACKCluster
 
 // importCluster returns an active cluster spec containing the given config's clusterName and region/zone
 // and creates a Secret containing the cluster's CA and endpoint retrieved from the cluster object.
-func (h *Handler) importCluster(config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfig, error) {
-	clusterMap, err := GetClusterWithParam(h.secretsCache, &config.Spec)
+func (h *Handler) importCluster(config *ackv1.ACKClusterConfig, innerSecretStore *store.StsTokenStore) (*ackv1.ACKClusterConfig, error) {
+	clusterMap, err := GetClusterWithParam(h.secretsCache, &config.Spec, innerSecretStore)
 	if err != nil {
 		return config, err
 	}
@@ -165,14 +164,14 @@ func (h *Handler) importCluster(config *ackv1.ACKClusterConfig) (*ackv1.ACKClust
 		return config, fmt.Errorf("import cluster error: failed to convert and fix the configuration")
 	}
 	configUpdate.Spec = *fixedSpec
-	configUpdate.Spec.NodePoolList, err = GetNodePoolConfigInfo(h.secretsCache, &config.Spec)
+	configUpdate.Spec.NodePoolList, err = GetNodePoolConfigInfo(h.secretsCache, &config.Spec, innerSecretStore)
 	if err != nil {
 		return config, err
 	}
 	pauseClusterUpgrade := false
 	clusterIsUpgrading := false
 	if cluster.ClusterId != nil && *cluster.ClusterId != "" {
-		client, err := GetClient(h.secretsCache, &configUpdate.Spec)
+		client, err := GetClient(h.secretsCache, &configUpdate.Spec, innerSecretStore)
 		if err != nil {
 			return config, err
 		}
@@ -197,7 +196,7 @@ func (h *Handler) importCluster(config *ackv1.ACKClusterConfig) (*ackv1.ACKClust
 		return config, err
 	}
 	configStatus := configUpdate.DeepCopy()
-	if err = h.createCASecret(configStatus, cluster); err != nil {
+	if err = h.createCASecret(configStatus, cluster, innerSecretStore); err != nil {
 		return configStatus, err
 	}
 	configStatus.Status.Phase = ackConfigActivePhase
@@ -215,12 +214,12 @@ func (h *Handler) OnAckConfigRemoved(key string, config *ackv1.ACKClusterConfig)
 		return config, nil
 	}
 
-	client, err := GetClient(h.secretsCache, &config.Spec)
+	client, err := GetClient(h.secretsCache, &config.Spec, secretStore)
 	if err != nil {
 		return config, err
 	}
 
-	_, err = GetCluster(h.secretsCache, &config.Spec)
+	_, err = GetCluster(h.secretsCache, &config.Spec, secretStore)
 	if err != nil {
 		logrus.Infof("Get Cluster %v error: %+v", config.Spec.Name, err)
 		if IsNotFound(err) {
@@ -239,7 +238,7 @@ func (h *Handler) OnAckConfigRemoved(key string, config *ackv1.ACKClusterConfig)
 	return config, nil
 }
 
-func (h *Handler) create(config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfig, error) {
+func (h *Handler) create(config *ackv1.ACKClusterConfig, innerSecretStore *store.StsTokenStore) (*ackv1.ACKClusterConfig, error) {
 	if config.Spec.Imported {
 		logrus.Infof("importing cluster [%s]", config.Name)
 		config = config.DeepCopy()
@@ -247,7 +246,7 @@ func (h *Handler) create(config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfi
 		return h.ackCC.UpdateStatus(config)
 	}
 
-	client, err := GetClient(h.secretsCache, &config.Spec)
+	client, err := GetClient(h.secretsCache, &config.Spec, innerSecretStore)
 	if err != nil {
 		return config, err
 	}
@@ -271,8 +270,8 @@ func (h *Handler) create(config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfi
 	return config, err
 }
 
-func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfig, error) {
-	cluster, err := GetClusterWithParam(h.secretsCache, &config.Spec)
+func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig, innerSecretStore *store.StsTokenStore) (*ackv1.ACKClusterConfig, error) {
+	cluster, err := GetClusterWithParam(h.secretsCache, &config.Spec, innerSecretStore)
 	if err != nil {
 		return config, err
 	}
@@ -282,7 +281,7 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 	clusterState := utils.GetMapString("state", *cluster)
 	logrus.Infof("ackconfig cluster refersh updating %s", config.Name)
 	clusterIsUpgrading := false
-	client, err := GetClient(h.secretsCache, &config.Spec)
+	client, err := GetClient(h.secretsCache, &config.Spec, innerSecretStore)
 	if err != nil {
 		return config, err
 	}
@@ -350,7 +349,7 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 		return config, err
 	}
 	config = updateConfig.DeepCopy()
-	nodePoolsInfo, err := GetNodePools(h.secretsCache, &config.Spec)
+	nodePoolsInfo, err := GetNodePools(h.secretsCache, &config.Spec, innerSecretStore)
 	if err != nil {
 		return config, err
 	}
@@ -378,12 +377,12 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 			return config, nil
 		}
 	}
-	upstreamSpec, err := BuildUpstreamClusterState(h.secretsCache, &config.Spec)
+	upstreamSpec, err := BuildUpstreamClusterState(h.secretsCache, &config.Spec, innerSecretStore)
 	if err != nil {
 		return config, err
 	}
 
-	return h.updateUpstreamClusterState(config, upstreamSpec)
+	return h.updateUpstreamClusterState(config, upstreamSpec, innerSecretStore)
 }
 
 // enqueueUpdate enqueues the config if it is already in the updating phase. Otherwise, the
@@ -409,8 +408,8 @@ func (h *Handler) enqueueUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClust
 }
 
 // updateUpstreamClusterState sync config to upstream cluster
-func (h *Handler) updateUpstreamClusterState(config *ackv1.ACKClusterConfig, upstreamSpec *ackv1.ACKClusterConfigSpec) (*ackv1.ACKClusterConfig, error) {
-	client, err := GetClient(h.secretsCache, &config.Spec)
+func (h *Handler) updateUpstreamClusterState(config *ackv1.ACKClusterConfig, upstreamSpec *ackv1.ACKClusterConfigSpec, innerSecretStore *store.StsTokenStore) (*ackv1.ACKClusterConfig, error) {
+	client, err := GetClient(h.secretsCache, &config.Spec, innerSecretStore)
 	if err != nil {
 		return config, err
 	}
@@ -451,8 +450,8 @@ func (h *Handler) setUpdatingPhase(config *ackv1.ACKClusterConfig) (*ackv1.ACKCl
 	return h.enqueueUpdate(config)
 }
 
-func (h *Handler) waitForCreationComplete(config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfig, error) {
-	cluster, err := GetCluster(h.secretsCache, &config.Spec)
+func (h *Handler) waitForCreationComplete(config *ackv1.ACKClusterConfig, innerSecretStore *store.StsTokenStore) (*ackv1.ACKClusterConfig, error) {
+	cluster, err := GetCluster(h.secretsCache, &config.Spec, innerSecretStore)
 	if err != nil {
 		return config, err
 	}
@@ -463,7 +462,7 @@ func (h *Handler) waitForCreationComplete(config *ackv1.ACKClusterConfig) (*ackv
 		return config, fmt.Errorf("creation failed for cluster %v", config.Spec.Name)
 	}
 	if *cluster.State == ack.ClusterStatusRunning {
-		if err := h.createCASecret(config, cluster); err != nil {
+		if err := h.createCASecret(config, cluster, innerSecretStore); err != nil {
 			return config, err
 		}
 		logrus.Infof("Cluster %v is running", config.Spec.Name)
@@ -477,15 +476,15 @@ func (h *Handler) waitForCreationComplete(config *ackv1.ACKClusterConfig) (*ackv
 	return config, nil
 }
 
-func GetNodePools(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) (*ackapi.DescribeClusterNodePoolsResponseBody, error) {
-	client, err := GetClient(secretsCache, configSpec)
+func GetNodePools(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec, innerSecretStore *store.StsTokenStore) (*ackapi.DescribeClusterNodePoolsResponseBody, error) {
+	client, err := GetClient(secretsCache, configSpec, innerSecretStore)
 	if err != nil {
 		return nil, err
 	}
 	return ack.GetNodePools(client, configSpec)
 }
 
-func GetClient(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) (*sdk.Client, error) {
+func GetClient(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec, innerSecretStore *store.StsTokenStore) (*sdk.Client, error) {
 	ns, id := utils.Parse(configSpec.AliyunCredentialSecret)
 	if aliyunCredentialSecret := configSpec.AliyunCredentialSecret; aliyunCredentialSecret != "" {
 		secret, err := secretsCache.Get(ns, id)
@@ -513,7 +512,7 @@ func GetClient(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKCluster
 		for _, secret := range secrets {
 			if val, exists := secret.Annotations["provisioning.cattle.io/pandaria-aliyun-sst"]; exists && val == "true" {
 
-				stsToken, exists := secretStore.GetAk(secret.Name)
+				stsToken, exists := innerSecretStore.GetAk(secret.Name)
 				if !exists || checkSTSToken(stsToken) != nil {
 					// If the STS token is not found for the first time or checkSTSToken fails (possibly due to the STS token expiration).
 					// then retrieve it again.
@@ -522,7 +521,7 @@ func GetClient(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKCluster
 					}
 
 					// Retrieve the STS token again.
-					stsToken, _ = secretStore.GetAk(secret.Name)
+					stsToken, _ = innerSecretStore.GetAk(secret.Name)
 					if err := checkSTSToken(stsToken); err != nil {
 						return nil, err
 					}
@@ -555,8 +554,8 @@ func getSTSCredential(client *sts.Client, accountID, roleName string) (accessKey
 	return response.Credentials.AccessKeyId, response.Credentials.AccessKeySecret, response.Credentials.SecurityToken, nil
 }
 
-func GetCluster(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) (*ackapi.DescribeClusterDetailResponseBody, error) {
-	client, err := GetClient(secretsCache, configSpec)
+func GetCluster(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec, innerSecretStore *store.StsTokenStore) (*ackapi.DescribeClusterDetailResponseBody, error) {
+	client, err := GetClient(secretsCache, configSpec, innerSecretStore)
 	if err != nil {
 		return nil, err
 	}
@@ -564,8 +563,8 @@ func GetCluster(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKCluste
 	return ack.GetCluster(client, configSpec)
 }
 
-func GetClusterWithParam(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) (*map[string]interface{}, error) {
-	client, err := GetClient(secretsCache, configSpec)
+func GetClusterWithParam(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec, innerSecretStore *store.StsTokenStore) (*map[string]interface{}, error) {
+	client, err := GetClient(secretsCache, configSpec, innerSecretStore)
 	if err != nil {
 		return nil, err
 	}
@@ -573,12 +572,12 @@ func GetClusterWithParam(secretsCache wranglerv1.SecretCache, configSpec *ackv1.
 	return ack.GetClusterWithParams(client, configSpec)
 }
 
-func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) (*ackv1.ACKClusterConfigSpec, error) {
+func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec, innerSecretStore *store.StsTokenStore) (*ackv1.ACKClusterConfigSpec, error) {
 	if configSpec == nil {
 		logrus.Warn("Warning BuildUpstreamClusterState: The 'configSpec' data is nil, the cluster's configSpec is not available")
 		return configSpec, nil
 	}
-	cluster, err := GetCluster(secretsCache, configSpec)
+	cluster, err := GetCluster(secretsCache, configSpec, innerSecretStore)
 	if err != nil {
 		return configSpec, err
 	}
@@ -589,7 +588,7 @@ func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *
 	pauseClusterUpgrade := false
 	clusterIsUpgrading := false
 	if configSpec.ClusterID != "" {
-		client, err := GetClient(secretsCache, configSpec)
+		client, err := GetClient(secretsCache, configSpec, innerSecretStore)
 		if err != nil {
 			return configSpec, err
 		}
@@ -618,7 +617,7 @@ func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *
 		PauseClusterUpgrade: pauseClusterUpgrade,
 		ClusterIsUpgrading:  clusterIsUpgrading,
 	}
-	newSpec.NodePoolList, err = GetNodePoolConfigInfo(secretsCache, configSpec)
+	newSpec.NodePoolList, err = GetNodePoolConfigInfo(secretsCache, configSpec, innerSecretStore)
 	if err != nil {
 		return configSpec, err
 	}
@@ -626,16 +625,16 @@ func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *
 	return newSpec, nil
 }
 
-func GetNodePoolConfigInfo(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) ([]ackv1.NodePoolInfo, error) {
-	nodePoolInfo, err := GetNodePools(secretsCache, configSpec)
+func GetNodePoolConfigInfo(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec, innerSecretStore *store.StsTokenStore) ([]ackv1.NodePoolInfo, error) {
+	nodePoolInfo, err := GetNodePools(secretsCache, configSpec, innerSecretStore)
 	if err != nil {
 		return nil, err
 	}
 	return ack.ToNodePoolConfigInfo(nodePoolInfo)
 }
 
-func GetUserConfig(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) (*ackapi.DescribeClusterUserKubeconfigResponseBody, error) {
-	client, err := GetClient(secretsCache, configSpec)
+func GetUserConfig(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec, innerSecretStore *store.StsTokenStore) (*ackapi.DescribeClusterUserKubeconfigResponseBody, error) {
+	client, err := GetClient(secretsCache, configSpec, innerSecretStore)
 	if err != nil {
 		return nil, err
 	}
@@ -717,8 +716,8 @@ func FixConfig(configSpec *ackv1.ACKClusterConfigSpec, clusterMap map[string]int
 }
 
 // FixClusterId fix empty field clusterId , only for clusters which create by ack-operator
-func FixClusterId(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) error {
-	client, err := GetClient(secretsCache, configSpec)
+func FixClusterId(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec, innerSecretStore *store.StsTokenStore) error {
+	client, err := GetClient(secretsCache, configSpec, innerSecretStore)
 	if err != nil {
 		return err
 	}
@@ -745,8 +744,8 @@ func FixClusterId(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClus
 }
 
 // createCASecret creates a secret containing a CA and endpoint for use in generating a kubeconfig file.
-func (h *Handler) createCASecret(config *ackv1.ACKClusterConfig, cluster *ackapi.DescribeClusterDetailResponseBody) error {
-	client, err := GetClient(h.secretsCache, &config.Spec)
+func (h *Handler) createCASecret(config *ackv1.ACKClusterConfig, cluster *ackapi.DescribeClusterDetailResponseBody, innerSecretStore *store.StsTokenStore) error {
+	client, err := GetClient(h.secretsCache, &config.Spec, innerSecretStore)
 	if err != nil {
 		return err
 	}
