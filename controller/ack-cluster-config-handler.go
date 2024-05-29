@@ -812,10 +812,11 @@ func IsNotFound(err error) bool {
 }
 
 func checkSTSToken(stsToken store.StsToken) error {
-	client, err := ecs.NewClientWithAccessKey(
+	client, err := ecs.NewClientWithStsToken(
 		defaultRegion,
 		stsToken.AK,
 		stsToken.SK,
+		stsToken.Token,
 	)
 	if err != nil {
 		return err
