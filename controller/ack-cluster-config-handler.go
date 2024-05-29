@@ -519,7 +519,7 @@ func GetClient(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKCluster
 				if !exists || checkSTSToken(stsToken) != nil {
 					// If the STS token is not found for the first time or checkSTSToken fails (possibly due to the STS token expiration).
 					// then retrieve it again.
-					if err := setSTStoMap(secret, configSpec.AccountID, configSpec.RoleName, configSpec.RegionID); err != nil {
+					if err := setSTStoMap(secret, configSpec.AccountID, configSpec.RoleName, configSpec.RegionID, innerSecretStore); err != nil {
 						return nil, err
 					}
 
@@ -830,7 +830,7 @@ func checkSTSToken(stsToken store.StsToken) error {
 	return nil
 }
 
-func setSTStoMap(cc *corev1.Secret, accountID, roleName, regionID string) error {
+func setSTStoMap(cc *corev1.Secret, accountID, roleName, regionID string, innerSecretStore *store.StsTokenStore) error {
 	stsAk := string(cc.Data["aliyunecscredentialConfig-accessKeyId"])
 	stsSk := string(cc.Data["aliyunecscredentialConfig-accessKeySecret"])
 	client, err := getACKSTSClient(regionID, stsAk, stsSk)
@@ -841,7 +841,10 @@ func setSTStoMap(cc *corev1.Secret, accountID, roleName, regionID string) error 
 	if err != nil {
 		return fmt.Errorf("error get sts token error secret Name: %s", cc.Name)
 	}
-	secretStore.SetAk(cc.Name, store.StsToken{
+	if innerSecretStore == nil {
+		return fmt.Errorf("error get sts token error secretStore is nil: %s", cc.Name)
+	}
+	innerSecretStore.SetAk(cc.Name, store.StsToken{
 		AK:    ak,
 		SK:    sk,
 		Token: token,
