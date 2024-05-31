@@ -21,6 +21,9 @@ spec:
         properties:
           spec:
             properties:
+              account_id:
+                nullable: true
+                type: string
               aliyun_credential_secret:
                 nullable: true
                 type: string
@@ -182,6 +185,9 @@ spec:
                 nullable: true
                 type: string
               resourceGroupId:
+                nullable: true
+                type: string
+              role_name:
                 nullable: true
                 type: string
               securityGroupId:
