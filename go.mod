@@ -1,6 +1,6 @@
 module github.com/cnrancher/ack-operator
 
-go 1.22.3
+go 1.22.0
 
 replace k8s.io/client-go => k8s.io/client-go v0.30.1
 
