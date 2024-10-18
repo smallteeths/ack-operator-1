@@ -1,0 +1,19 @@
+name: validate-ci
+on:
+  push:
+    branches:
+      - release/v*
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+jobs:
+  pr-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: ci
+        run: |
+          make ci

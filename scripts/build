@@ -4,8 +4,22 @@ source $(dirname $0)/version
 
 cd $(dirname $0)/..
 
+mkdir -p dist/artifacts/
 mkdir -p bin
 if [ "$(uname)" = "Linux" ]; then
     OTHER_LINKFLAGS="-extldflags -static -s"
 fi
 CGO_ENABLED=0 go build -ldflags "$OTHER_LINKFLAGS" -o bin/ack-operator
+
+if [ -n "$CROSS" ]; then
+    for platform in linux/amd64 linux/arm64; do
+        os="${platform%/*}"
+        arch="${platform#*/}"
+        FLAGS="$LINKFLAGS"
+        [ "$os" = "linux" ] && FLAGS="-extldflags -static -s $FLAGS"
+        echo "building $os $arch binary"
+        mkdir -p bin/$os/$arch
+        GOOS=$os GOARCH=$arch go build -ldflags "$FLAGS" -o bin/$os/$arch/ack-operator
+        cp bin/$os/$arch/ack-operator dist/artifacts/ack-operator-$os-$arch
+    done
+fi
