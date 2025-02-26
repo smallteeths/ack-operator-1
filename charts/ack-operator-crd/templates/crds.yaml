@@ -21,6 +21,18 @@ spec:
         properties:
           spec:
             properties:
+              addons:
+                items:
+                  properties:
+                    config:
+                      nullable: true
+                      type: string
+                    name:
+                      nullable: true
+                      type: string
+                  type: object
+                nullable: true
+                type: array
               aliyun_credential_secret:
                 nullable: true
                 type: string
@@ -31,6 +43,9 @@ spec:
                 type: string
               clusterIsUpgrading:
                 type: boolean
+              clusterSpec:
+                nullable: true
+                type: string
               clusterType:
                 nullable: true
                 type: string
@@ -194,6 +209,9 @@ spec:
                 type: boolean
               sshFlags:
                 type: boolean
+              taskId:
+                nullable: true
+                type: string
               timeoutMins:
                 type: integer
               vpcId:
