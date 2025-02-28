@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	ackv1 "github.com/cnrancher/ack-operator/pkg/apis/ack.pandaria.io/v1"
-
-	ackapi "github.com/alibabacloud-go/cs-20151215/v3/client"
+	ackapi "github.com/alibabacloud-go/cs-20151215/v5/client"
 	"github.com/alibabacloud-go/tea/tea"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
+	ackv1 "github.com/cnrancher/ack-operator/pkg/apis/ack.pandaria.io/v1"
 )
 
 func newNodePoolCreateRequest(npConfig *ackv1.NodePoolInfo) *ackapi.CreateClusterNodePoolRequest {
@@ -26,13 +25,10 @@ func newNodePoolCreateRequest(npConfig *ackv1.NodePoolInfo) *ackapi.CreateCluste
 
 	return &ackapi.CreateClusterNodePoolRequest{
 		AutoScaling: &ackapi.CreateClusterNodePoolRequestAutoScaling{
-			Enable:                tea.Bool(false),
-			MaxInstances:          tea.Int64(npConfig.InstancesNum),
-			MinInstances:          tea.Int64(npConfig.InstancesNum),
-			Type:                  tea.String(npConfig.ScalingType),
-			IsBondEip:             tea.Bool(npConfig.IsBondEip),
-			EipInternetChargeType: tea.String(npConfig.EipInternetChargeType),
-			EipBandwidth:          tea.Int64(npConfig.EipBandwidth),
+			Enable:       tea.Bool(false),
+			MaxInstances: tea.Int64(npConfig.InstancesNum),
+			MinInstances: tea.Int64(npConfig.InstancesNum),
+			Type:         tea.String(npConfig.ScalingType),
 		},
 		NodepoolInfo: &ackapi.CreateClusterNodePoolRequestNodepoolInfo{
 			Name: tea.String(npConfig.Name),
@@ -46,7 +42,7 @@ func newNodePoolCreateRequest(npConfig *ackv1.NodePoolInfo) *ackapi.CreateCluste
 			KeyPair:            tea.String(npConfig.KeyPair),
 			Period:             tea.Int64(npConfig.Period),
 			PeriodUnit:         tea.String(npConfig.PeriodUnit),
-			Platform:           tea.String(npConfig.Platform),
+			ImageType:          tea.String(npConfig.Platform),
 			SystemDiskCategory: tea.String(npConfig.SystemDiskCategory),
 			SystemDiskSize:     tea.Int64(npConfig.SystemDiskSize),
 			VswitchIds:         tea.StringSlice(npConfig.VSwitchIds),
