@@ -570,6 +570,7 @@ func FixConfig(configSpec *ackv1.ACKClusterConfigSpec, clusterMap map[string]int
 	}
 	configSpec.Name = utils.GetMapString("name", clusterMap)
 	configSpec.VswitchIds = strings.Split(utils.GetMapString("vswitch_id", clusterMap)+"", ",") // append empty string, avoid empty pointer value
+	configSpec.PodVswitchIds = strings.Split(utils.GetMapString("pod_vswitch_ids", clusterMap)+"", ",")
 	configSpec.ResourceGroupID = utils.GetMapString("resource_group_id", clusterMap)
 	// only can get these params while state is active
 	var (

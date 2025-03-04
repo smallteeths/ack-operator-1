@@ -63,6 +63,7 @@ func newClusterCreateRequest(configSpec *ackv1.ACKClusterConfigSpec) *ackapi.Cre
 	req.SecurityGroupId = tea.String(configSpec.SecurityGroupID)
 	req.SshFlags = tea.Bool(configSpec.SSHFlags)
 	req.Addons = ConvertAddons(configSpec)
+	req.PodVswitchIds = tea.StringSlice(configSpec.PodVswitchIds)
 
 	// get worker creation info from default node pool
 	getInitWorkerFromDefaultNodePool(configSpec, req)
@@ -74,6 +75,15 @@ func getInitWorkerFromDefaultNodePool(configSpec *ackv1.ACKClusterConfigSpec, re
 	nodePools := make([]*ackapi.Nodepool, 0, 1)
 	for _, pool := range configSpec.NodePoolList {
 		if pool.Name == DefaultNodePoolName {
+			var dataDiskList []*ackapi.DataDisk
+			for _, dataDisk := range pool.DataDisk {
+				dataDiskList = append(dataDiskList, &ackapi.DataDisk{
+					Category:             tea.String(dataDisk.Category),
+					Size:                 tea.Int64(dataDisk.Size),
+					Encrypted:            tea.String(dataDisk.Encrypted),
+					AutoSnapshotPolicyId: tea.String(dataDisk.AutoSnapshotPolicyID),
+				})
+			}
 			nodePools = append(nodePools, &ackapi.Nodepool{
 				AutoScaling: &ackapi.NodepoolAutoScaling{
 					Enable:       tea.Bool(false),
@@ -93,6 +103,7 @@ func getInitWorkerFromDefaultNodePool(configSpec *ackv1.ACKClusterConfigSpec, re
 					Period:             tea.Int64(pool.Period),
 					PeriodUnit:         tea.String(pool.PeriodUnit),
 					ImageType:          tea.String(pool.Platform),
+					DataDisks:          dataDiskList,
 					SystemDiskCategory: tea.String(pool.SystemDiskCategory),
 					SystemDiskSize:     tea.Int64(pool.SystemDiskSize),
 					VswitchIds:         tea.StringSlice(pool.VSwitchIds),

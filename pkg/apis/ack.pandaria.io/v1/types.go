@@ -60,6 +60,7 @@ type ACKClusterConfigSpec struct {
 	MasterSystemDiskCategory string         `json:"masterSystemDiskCategory,omitempty" norman:"noupdate"`
 	MasterSystemDiskSize     int64          `json:"masterSystemDiskSize,omitempty" norman:"noupdate"`
 	VswitchIds               []string       `json:"vswitchIds,omitempty" norman:"noupdate"`
+	PodVswitchIds            []string       `json:"podVswitchIds,omitempty" norman:"noupdate"`
 	SnatEntry                bool           `json:"snatEntry"`
 	ProxyMode                string         `json:"proxyMode,omitempty"`
 	EndpointPublicAccess     bool           `json:"endpointPublicAccess"`
