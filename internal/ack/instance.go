@@ -94,6 +94,10 @@ func getInitWorkerFromDefaultNodePool(configSpec *ackv1.ACKClusterConfigSpec, re
 				NodepoolInfo: &ackapi.NodepoolNodepoolInfo{
 					Name: tea.String(pool.Name),
 				},
+				KubernetesConfig: &ackapi.NodepoolKubernetesConfig{
+					Runtime:        tea.String(pool.Runtime),
+					RuntimeVersion: tea.String(pool.RuntimeVersion),
+				},
 				ScalingGroup: &ackapi.NodepoolScalingGroup{
 					AutoRenew:          tea.Bool(pool.AutoRenew),
 					AutoRenewPeriod:    tea.Int64(pool.AutoRenewPeriod),

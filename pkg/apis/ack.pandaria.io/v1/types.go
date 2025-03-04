@@ -113,6 +113,8 @@ type NodePoolInfo struct {
 	Platform           string     `json:"platform,omitempty"`
 	SystemDiskCategory string     `json:"system_disk_category,omitempty"`
 	SystemDiskSize     int64      `json:"system_disk_size,omitempty"`
+	Runtime            string     `json:"runtime,omitempty" norman:"noupdate"`
+	RuntimeVersion     string     `json:"runtime_version,omitempty" norman:"noupdate"`
 	VSwitchIds         []string   `json:"v_switch_ids,omitempty"`
 }
 

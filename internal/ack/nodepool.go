@@ -33,6 +33,10 @@ func newNodePoolCreateRequest(npConfig *ackv1.NodePoolInfo) *ackapi.CreateCluste
 		NodepoolInfo: &ackapi.CreateClusterNodePoolRequestNodepoolInfo{
 			Name: tea.String(npConfig.Name),
 		},
+		KubernetesConfig: &ackapi.CreateClusterNodePoolRequestKubernetesConfig{
+			Runtime:        tea.String(npConfig.Runtime),
+			RuntimeVersion: tea.String(npConfig.RuntimeVersion),
+		},
 		ScalingGroup: &ackapi.CreateClusterNodePoolRequestScalingGroup{
 			AutoRenew:          tea.Bool(npConfig.AutoRenew),
 			AutoRenewPeriod:    tea.Int64(npConfig.AutoRenewPeriod),
@@ -416,6 +420,8 @@ func ToNodePoolConfigInfo(nodePoolInfo *ackapi.DescribeClusterNodePoolsResponseB
 			SystemDiskCategory: tea.StringValue(nodePool.ScalingGroup.SystemDiskCategory),
 			SystemDiskSize:     tea.Int64Value(nodePool.ScalingGroup.SystemDiskSize),
 			VSwitchIds:         tea.StringSliceValue(nodePool.ScalingGroup.VswitchIds),
+			Runtime:            tea.StringValue(nodePool.KubernetesConfig.Runtime),
+			RuntimeVersion:     tea.StringValue(nodePool.KubernetesConfig.RuntimeVersion),
 		})
 	}
 	return nodePoolList, nil
