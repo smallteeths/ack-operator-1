@@ -104,6 +104,11 @@ func (in *ACKClusterConfigSpec) DeepCopyInto(out *ACKClusterConfigSpec) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.PodVswitchIds != nil {
+		in, out := &in.PodVswitchIds, &out.PodVswitchIds
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.NodePoolList != nil {
 		in, out := &in.NodePoolList, &out.NodePoolList
 		*out = make([]NodePoolInfo, len(*in))
