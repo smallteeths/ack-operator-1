@@ -163,6 +163,12 @@ spec:
                     platform:
                       nullable: true
                       type: string
+                    runtime:
+                      nullable: true
+                      type: string
+                    runtime_version:
+                      nullable: true
+                      type: string
                     scaling_type:
                       nullable: true
                       type: string
