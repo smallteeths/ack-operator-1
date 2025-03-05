@@ -50,6 +50,7 @@ func newNodePoolCreateRequest(npConfig *ackv1.NodePoolInfo) *ackapi.CreateCluste
 			SystemDiskCategory: tea.String(npConfig.SystemDiskCategory),
 			SystemDiskSize:     tea.Int64(npConfig.SystemDiskSize),
 			VswitchIds:         tea.StringSlice(npConfig.VSwitchIds),
+			DesiredSize:        tea.Int64(npConfig.InstancesNum),
 		},
 	}
 }
@@ -119,13 +120,6 @@ func UpdateNodePoolBatch(client *sdk.Client, configSpec *ackv1.ACKClusterConfigS
 		}
 		np.NodepoolId = tea.StringValue(c.NodepoolId)
 		flag = Changed
-		_, errMsg := ScaleUpNodePool(client, configSpec, &np, np.InstancesNum)
-		if errMsg != nil {
-			if !isThrottlingError(err) && !isUnexpectedStatusError(err) {
-				failedMsg = append(failedMsg, fmt.Sprintf("%s(scale up error:%s)", np.NodepoolId, errMsg.Error()))
-			}
-			continue
-		}
 	}
 
 	// update node pool

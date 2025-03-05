@@ -86,8 +86,10 @@ func getInitWorkerFromDefaultNodePool(configSpec *ackv1.ACKClusterConfigSpec, re
 			}
 			nodePools = append(nodePools, &ackapi.Nodepool{
 				AutoScaling: &ackapi.NodepoolAutoScaling{
-					Enable: tea.Bool(false),
-					Type:   tea.String(pool.ScalingType),
+					Enable:       tea.Bool(false),
+					MaxInstances: tea.Int64(pool.InstancesNum),
+					MinInstances: tea.Int64(pool.InstancesNum),
+					Type:         tea.String(pool.ScalingType),
 				},
 				NodepoolInfo: &ackapi.NodepoolNodepoolInfo{
 					Name: tea.String(pool.Name),
