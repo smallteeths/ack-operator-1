@@ -3,6 +3,7 @@ package ack
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"strings"
 
 	ackapi "github.com/alibabacloud-go/cs-20151215/v5/client"
@@ -173,6 +174,8 @@ func UpdateNodePoolBatch(client *sdk.Client, configSpec *ackv1.ACKClusterConfigS
 	for _, poolInfo := range updateQueue {
 		updatedIdMap[poolInfo.NodepoolId] = poolInfo.NodepoolId
 	}
+	logrus.Infof("delete ==== updatedIdMap =========[%+v]", updatedIdMap)
+	logrus.Infof("delete ==== nodePoolsInfo =========[%+v]", nodePoolsInfo)
 	for _, np := range nodePoolsInfo {
 		npId := np.NodepoolId
 		_, ok := updatedIdMap[npId]
