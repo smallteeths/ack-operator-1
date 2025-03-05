@@ -351,8 +351,7 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 		return config, err
 	}
 
-	config.Spec = *upstreamSpec
-	return h.updateUpstreamClusterState(config)
+	return h.updateUpstreamClusterState(config, upstreamSpec)
 }
 
 // enqueueUpdate enqueues the config if it is already in the updating phase. Otherwise, the
@@ -378,7 +377,7 @@ func (h *Handler) enqueueUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClust
 }
 
 // updateUpstreamClusterState sync config to upstream cluster
-func (h *Handler) updateUpstreamClusterState(config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfig, error) {
+func (h *Handler) updateUpstreamClusterState(config *ackv1.ACKClusterConfig, upstreamSpec *ackv1.ACKClusterConfigSpec) (*ackv1.ACKClusterConfig, error) {
 	client, err := GetClient(h.secretsCache, &config.Spec)
 	if err != nil {
 		return config, err
@@ -411,6 +410,7 @@ func (h *Handler) updateUpstreamClusterState(config *ackv1.ACKClusterConfig) (*a
 
 func (h *Handler) setUpdatingPhase(config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfig, error) {
 	configUpdate := config.DeepCopy()
+	logrus.Infof("update ==== configUpdate =========[%+v]", configUpdate)
 	configUpdate, err := h.ackCC.Update(configUpdate)
 	if err != nil {
 		return config, err
