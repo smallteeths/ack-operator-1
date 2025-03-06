@@ -90,6 +90,7 @@ func UpdateNodePoolBatch(client *sdk.Client, configSpec *ackv1.ACKClusterConfigS
 		createQueue []ackv1.NodePoolInfo
 	)
 	currentConfigPool := configSpec.NodePoolList
+	logrus.Infof("create ==== currentConfigPool =========[%+v]", currentConfigPool)
 	for _, info := range currentConfigPool {
 		if info.NodepoolId != "" {
 			updateQueue = append(updateQueue, *info.DeepCopy())
@@ -174,39 +175,37 @@ func UpdateNodePoolBatch(client *sdk.Client, configSpec *ackv1.ACKClusterConfigS
 	updatedIdMap := make(map[string]string)
 	for _, poolInfo := range updateQueue {
 		updatedIdMap[poolInfo.NodepoolId] = poolInfo.NodepoolId
-		updatedIdMap[poolInfo.Name] = poolInfo.Name
 	}
 	logrus.Infof("delete ==== updatedIdMap =========[%+v]", updatedIdMap)
 	logrus.Infof("delete ==== nodePoolsInfo =========[%+v]", nodePoolsInfo)
 	for _, np := range nodePoolsInfo {
 		npId := np.NodepoolId
-		if _, idExists := updatedIdMap[npId]; !idExists {
-			if _, nameExists := updatedIdMap[np.Name]; !nameExists && np.Name != DefaultNodePoolName {
-				flag = Changed
-				nodes, err := GetClusterNodes(client, configSpec, npId)
-				if err != nil {
-					return Changed, err
+		_, ok := updatedIdMap[npId]
+		if !ok && np.Name != DefaultNodePoolName {
+			flag = Changed
+			nodes, err := GetClusterNodes(client, configSpec, npId)
+			if err != nil {
+				return Changed, err
+			}
+			if len(nodes.Nodes) > 0 {
+				var npNames []string
+				for _, node := range nodes.Nodes {
+					npNames = append(npNames, tea.StringValue(node.NodeName))
 				}
-				if len(nodes.Nodes) > 0 {
-					var npNames []string
-					for _, node := range nodes.Nodes {
-						npNames = append(npNames, tea.StringValue(node.NodeName))
-					}
-					err = ScaleDownNodePool(client, configSpec, npNames)
-					if err != nil {
-						// DeleteClusterNodes DO NOT returns any task-id or process info,
-						// err message `cannot operate cluster where state is removing` means cluster is removing nodes
-						if !isThrottlingError(err) && !isUnexpectedStatusError(err) {
-							failedMsg = append(failedMsg, fmt.Sprintf("%s(scale down error:%s)", npId, err.Error()))
-						}
-					}
-				}
-
-				_, err = DeleteNodePool(client, configSpec, npId)
+				err = ScaleDownNodePool(client, configSpec, npNames)
 				if err != nil {
+					// DeleteClusterNodes DO NOT returns any task-id or process info,
+					// err message `cannot operate cluster where state is removing` means cluster is removing nodes
 					if !isThrottlingError(err) && !isUnexpectedStatusError(err) {
-						failedMsg = append(failedMsg, fmt.Sprintf("%s(delete nood pool error:%s)", npId, err.Error()))
+						failedMsg = append(failedMsg, fmt.Sprintf("%s(scale down error:%s)", npId, err.Error()))
 					}
+				}
+			}
+
+			_, err = DeleteNodePool(client, configSpec, npId)
+			if err != nil {
+				if !isThrottlingError(err) && !isUnexpectedStatusError(err) {
+					failedMsg = append(failedMsg, fmt.Sprintf("%s(delete nood pool error:%s)", npId, err.Error()))
 				}
 			}
 		}

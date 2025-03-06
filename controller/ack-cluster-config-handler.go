@@ -569,6 +569,7 @@ func FixConfig(configSpec *ackv1.ACKClusterConfigSpec, clusterMap map[string]int
 	if configSpec.KubernetesVersion == "" {
 		configSpec.KubernetesVersion = utils.GetMapString("current_version", clusterMap)
 	}
+	configSpec.ClusterSpec = utils.GetMapString("cluster_spec", clusterMap)
 	configSpec.Name = utils.GetMapString("name", clusterMap)
 	configSpec.VswitchIds = strings.Split(utils.GetMapString("vswitch_id", clusterMap)+"", ",") // append empty string, avoid empty pointer value
 	configSpec.PodVswitchIds = strings.Split(utils.GetMapString("pod_vswitch_ids", clusterMap)+"", ",")
