@@ -287,7 +287,7 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 				return config, updateErr
 			}
 			config.Spec.TaskId = *upgradeClusterResponse.TaskId
-			return h.ackCC.UpdateStatus(config)
+			return h.ackCC.Update(config)
 		}
 	}
 
