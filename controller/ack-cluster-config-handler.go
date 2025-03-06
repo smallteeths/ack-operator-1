@@ -252,7 +252,7 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 	if err != nil {
 		return config, err
 	}
-	logrus.Infof("des==== taskInfo ==== config =========[%+v]", config)
+	logrus.Infof("des==== taskInfo ==== config =====-======[%+v]", config)
 	if config.Spec.ClusterID != "" && config.Spec.TaskId != "" {
 		taskInfo, err := ack.DescribeTaskInfo(client, &config.Spec)
 		logrus.Infof("des ==== taskInfo =========[%+v]", taskInfo)
