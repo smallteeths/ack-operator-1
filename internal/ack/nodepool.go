@@ -415,7 +415,7 @@ func ToNodePoolConfigInfo(nodePoolInfo *ackapi.DescribeClusterNodePoolsResponseB
 			KeyPair:            tea.StringValue(nodePool.ScalingGroup.KeyPair),
 			Period:             tea.Int64Value(nodePool.ScalingGroup.Period),
 			PeriodUnit:         tea.StringValue(nodePool.ScalingGroup.PeriodUnit),
-			Platform:           tea.StringValue(nodePool.ScalingGroup.Platform),
+			Platform:           tea.StringValue(nodePool.ScalingGroup.ImageType),
 			SystemDiskCategory: tea.StringValue(nodePool.ScalingGroup.SystemDiskCategory),
 			SystemDiskSize:     tea.Int64Value(nodePool.ScalingGroup.SystemDiskSize),
 			VSwitchIds:         tea.StringSliceValue(nodePool.ScalingGroup.VswitchIds),
