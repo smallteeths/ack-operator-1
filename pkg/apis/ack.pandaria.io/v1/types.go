@@ -38,6 +38,7 @@ type ACKClusterConfigSpec struct {
 	AliyunCredentialSecret   string         `json:"aliyun_credential_secret,omitempty"`
 	DisableRollback          bool           `json:"disableRollback"`
 	ClusterType              string         `json:"clusterType,omitempty" norman:"noupdate"`
+	ClusterSpec              string         `json:"clusterSpec,omitempty" norman:"noupdate"`
 	KubernetesVersion        string         `json:"kubernetesVersion,omitempty"`
 	TimeoutMins              int64          `json:"timeoutMins,omitempty" norman:"noupdate"`
 	RegionID                 string         `json:"regionId,omitempty" norman:"noupdate"`
@@ -59,6 +60,7 @@ type ACKClusterConfigSpec struct {
 	MasterSystemDiskCategory string         `json:"masterSystemDiskCategory,omitempty" norman:"noupdate"`
 	MasterSystemDiskSize     int64          `json:"masterSystemDiskSize,omitempty" norman:"noupdate"`
 	VswitchIds               []string       `json:"vswitchIds,omitempty" norman:"noupdate"`
+	PodVswitchIds            []string       `json:"podVswitchIds,omitempty" norman:"noupdate"`
 	SnatEntry                bool           `json:"snatEntry"`
 	ProxyMode                string         `json:"proxyMode,omitempty"`
 	EndpointPublicAccess     bool           `json:"endpointPublicAccess"`
@@ -70,8 +72,10 @@ type ACKClusterConfigSpec struct {
 	Imported                 bool           `json:"imported" norman:"noupdate"`
 	NodePoolList             []NodePoolInfo `json:"node_pool_list,omitempty"`
 	// Record the status of cluster upgrades
-	PauseClusterUpgrade bool `json:"pauseClusterUpgrade"`
-	ClusterIsUpgrading  bool `json:"clusterIsUpgrading"`
+	PauseClusterUpgrade bool    `json:"pauseClusterUpgrade"`
+	ClusterIsUpgrading  bool    `json:"clusterIsUpgrading"`
+	TaskId              string  `json:"taskId"`
+	Addons              []Addon `json:"addons,omitempty" norman:"noupdate"`
 }
 
 type ACKClusterConfigStatus struct {
@@ -109,5 +113,12 @@ type NodePoolInfo struct {
 	Platform           string     `json:"platform,omitempty"`
 	SystemDiskCategory string     `json:"system_disk_category,omitempty"`
 	SystemDiskSize     int64      `json:"system_disk_size,omitempty"`
+	Runtime            string     `json:"runtime,omitempty" norman:"noupdate"`
+	RuntimeVersion     string     `json:"runtime_version,omitempty" norman:"noupdate"`
 	VSwitchIds         []string   `json:"v_switch_ids,omitempty"`
+}
+
+type Addon struct {
+	Name   string `json:"name" norman:"noupdate"`
+	Config string `json:"config" norman:"noupdate"`
 }
