@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"strconv"
 
-	ackv1 "github.com/cnrancher/ack-operator/pkg/apis/ack.pandaria.io/v1"
-
-	ackapi "github.com/alibabacloud-go/cs-20151215/v3/client"
+	ackapi "github.com/alibabacloud-go/cs-20151215/v5/client"
 	"github.com/alibabacloud-go/tea/tea"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
+	ackv1 "github.com/cnrancher/ack-operator/pkg/apis/ack.pandaria.io/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -51,35 +50,20 @@ func newClusterCreateRequest(configSpec *ackv1.ACKClusterConfigSpec) *ackapi.Cre
 
 	req.Name = tea.String(configSpec.Name)
 	req.ClusterType = tea.String(configSpec.ClusterType)
+	req.ClusterSpec = tea.String(configSpec.ClusterSpec)
 	req.RegionId = tea.String(configSpec.RegionID)
 	req.KubernetesVersion = tea.String(configSpec.KubernetesVersion)
 	req.Vpcid = tea.String(configSpec.VpcID)
 	req.ContainerCidr = tea.String(configSpec.ContainerCidr)
 	req.ServiceCidr = tea.String(configSpec.ServiceCidr)
 	req.NodeCidrMask = tea.String(strconv.Itoa(int(configSpec.NodeCidrMask)))
-	req.CloudMonitorFlags = tea.Bool(configSpec.CloudMonitorFlags)
 	req.SnatEntry = tea.Bool(configSpec.SnatEntry)
 	req.ProxyMode = tea.String(configSpec.ProxyMode)
 	req.EndpointPublicAccess = tea.Bool(configSpec.EndpointPublicAccess)
 	req.SecurityGroupId = tea.String(configSpec.SecurityGroupID)
 	req.SshFlags = tea.Bool(configSpec.SSHFlags)
-	req.OsType = tea.String(configSpec.OsType)
-	req.Platform = tea.String(configSpec.Platform)
-	req.DisableRollback = tea.Bool(configSpec.DisableRollback)
-	req.LoginPassword = tea.String(configSpec.LoginPassword)
-	req.KeyPair = tea.String(configSpec.KeyPair)
-	// req.VswitchIds = tea.StringSlice(configSpec.VswitchIds)
-	// master instance
-	req.MasterCount = tea.Int64(configSpec.MasterCount)
-	req.MasterVswitchIds = tea.StringSlice(configSpec.MasterVswitchIds)
-	req.MasterInstanceTypes = tea.StringSlice(configSpec.MasterInstanceTypes)
-	req.MasterInstanceChargeType = tea.String(configSpec.MasterInstanceChargeType)
-	req.MasterPeriod = tea.Int64(configSpec.MasterPeriod)
-	req.MasterPeriodUnit = tea.String(configSpec.MasterPeriodUnit)
-	req.MasterAutoRenew = tea.Bool(configSpec.MasterAutoRenew)
-	req.MasterAutoRenewPeriod = tea.Int64(configSpec.MasterAutoRenewPeriod)
-	req.MasterSystemDiskCategory = tea.String(configSpec.MasterSystemDiskCategory)
-	req.MasterSystemDiskSize = tea.Int64(configSpec.MasterSystemDiskSize)
+	req.Addons = ConvertAddons(configSpec)
+	req.PodVswitchIds = tea.StringSlice(configSpec.PodVswitchIds)
 
 	// get worker creation info from default node pool
 	getInitWorkerFromDefaultNodePool(configSpec, req)
@@ -88,23 +72,52 @@ func newClusterCreateRequest(configSpec *ackv1.ACKClusterConfigSpec) *ackapi.Cre
 }
 
 func getInitWorkerFromDefaultNodePool(configSpec *ackv1.ACKClusterConfigSpec, req *ackapi.CreateClusterRequest) {
+	nodePools := make([]*ackapi.Nodepool, 0, 1)
 	for _, pool := range configSpec.NodePoolList {
 		if pool.Name == DefaultNodePoolName {
-			req.NumOfNodes = tea.Int64(pool.InstancesNum)
-			req.WorkerVswitchIds = tea.StringSlice(pool.VSwitchIds)
-			req.WorkerInstanceTypes = tea.StringSlice(pool.InstanceTypes)
-			req.WorkerInstanceChargeType = tea.String(pool.InstanceChargeType)
-			req.WorkerPeriod = tea.Int64(pool.Period)
-			req.WorkerPeriodUnit = tea.String(pool.PeriodUnit)
-			req.WorkerAutoRenew = tea.Bool(pool.AutoRenew)
-			req.WorkerAutoRenewPeriod = tea.Int64(pool.AutoRenewPeriod)
-			req.WorkerSystemDiskCategory = tea.String(pool.SystemDiskCategory)
-			req.WorkerSystemDiskSize = tea.Int64(pool.SystemDiskSize)
-			req.Platform = tea.String(pool.Platform)
-
+			var dataDiskList []*ackapi.DataDisk
+			for _, dataDisk := range pool.DataDisk {
+				dataDiskList = append(dataDiskList, &ackapi.DataDisk{
+					Category:             tea.String(dataDisk.Category),
+					Size:                 tea.Int64(dataDisk.Size),
+					Encrypted:            tea.String(dataDisk.Encrypted),
+					AutoSnapshotPolicyId: tea.String(dataDisk.AutoSnapshotPolicyID),
+				})
+			}
+			nodePools = append(nodePools, &ackapi.Nodepool{
+				AutoScaling: &ackapi.NodepoolAutoScaling{
+					Enable:       tea.Bool(false),
+					MaxInstances: tea.Int64(pool.InstancesNum),
+					MinInstances: tea.Int64(pool.InstancesNum),
+					Type:         tea.String(pool.ScalingType),
+				},
+				NodepoolInfo: &ackapi.NodepoolNodepoolInfo{
+					Name: tea.String(pool.Name),
+				},
+				KubernetesConfig: &ackapi.NodepoolKubernetesConfig{
+					Runtime:        tea.String(pool.Runtime),
+					RuntimeVersion: tea.String(pool.RuntimeVersion),
+				},
+				ScalingGroup: &ackapi.NodepoolScalingGroup{
+					AutoRenew:          tea.Bool(pool.AutoRenew),
+					AutoRenewPeriod:    tea.Int64(pool.AutoRenewPeriod),
+					InstanceChargeType: tea.String(pool.InstanceChargeType),
+					InstanceTypes:      tea.StringSlice(pool.InstanceTypes),
+					KeyPair:            tea.String(pool.KeyPair),
+					Period:             tea.Int64(pool.Period),
+					PeriodUnit:         tea.String(pool.PeriodUnit),
+					ImageType:          tea.String(pool.Platform),
+					DataDisks:          dataDiskList,
+					SystemDiskCategory: tea.String(pool.SystemDiskCategory),
+					SystemDiskSize:     tea.Int64(pool.SystemDiskSize),
+					VswitchIds:         tea.StringSlice(pool.VSwitchIds),
+					DesiredSize:        tea.Int64(pool.InstancesNum),
+				},
+			})
 			break
 		}
 	}
+	req.Nodepools = nodePools
 }
 
 // validateCreateRequest checks a config for the ability to generate a create request
@@ -113,13 +126,29 @@ func validateCreateRequest(configSpec *ackv1.ACKClusterConfigSpec) error {
 		return fmt.Errorf("cluster display name is required")
 	} else if configSpec.RegionID == "" {
 		return fmt.Errorf("region id is required")
-	} else if configSpec.LoginPassword == "" && configSpec.KeyPair == "" {
-		return fmt.Errorf("either login password or key pair name is needed")
 	} else if configSpec.VpcID == "" && !configSpec.SnatEntry {
 		return fmt.Errorf("snat entry is required when vpc is auto created")
 	}
 
 	return nil
+}
+
+func ConvertAddons(configSpec *ackv1.ACKClusterConfigSpec) []*ackapi.Addon {
+	if configSpec == nil || len(configSpec.Addons) == 0 {
+		// flannel
+		return nil
+	}
+
+	addons := make([]*ackapi.Addon, len(configSpec.Addons))
+	for i, addon := range configSpec.Addons {
+		name := addon.Name
+		config := addon.Config
+		addons[i] = &ackapi.Addon{
+			Name:   &name,
+			Config: &config,
+		}
+	}
+	return addons
 }
 
 // GetCluster returns cluster info
@@ -199,23 +228,24 @@ func RemoveCluster(client *sdk.Client, configSpec *ackv1.ACKClusterConfigSpec) e
 	})
 }
 
-func GetUpgradeStatus(svc *sdk.Client, state *ackv1.ACKClusterConfigSpec) (*ackapi.GetUpgradeStatusResponseBody, error) {
+func DescribeTaskInfo(svc *sdk.Client, state *ackv1.ACKClusterConfigSpec) (*ackapi.DescribeTaskInfoResponseBody, error) {
 	request := requests.NewCommonRequest()
+
 	request.Method = "GET"
 	request.Scheme = "https" // https | http
 	request.Domain = "cs." + state.RegionID + ".aliyuncs.com"
 	request.Version = DefaultACKAPIVersion
-	request.PathPattern = "/api/v2/clusters/" + state.ClusterID + "/upgrade/status"
+	request.PathPattern = "/tasks/" + state.TaskId
 	request.Headers["Content-Type"] = "application/json"
 
-	upgradeStatusResponseBody := &ackapi.GetUpgradeStatusResponseBody{}
-	if err := ProcessRequest(svc, request, upgradeStatusResponseBody); err != nil {
+	taskInfoResponseBody := &ackapi.DescribeTaskInfoResponseBody{}
+	if err := ProcessRequest(svc, request, taskInfoResponseBody); err != nil {
 		return nil, err
 	}
-	return upgradeStatusResponseBody, nil
+	return taskInfoResponseBody, nil
 }
 
-func UpgradeCluster(svc *sdk.Client, upstreamSpec *ackv1.ACKClusterConfigSpec) error {
+func UpgradeCluster(svc *sdk.Client, upstreamSpec *ackv1.ACKClusterConfigSpec) (*ackapi.UpgradeClusterResponseBody, error) {
 	request := requests.NewCommonRequest()
 	request.Method = "POST"
 	request.Scheme = "https" // https | http
@@ -229,9 +259,12 @@ func UpgradeCluster(svc *sdk.Client, upstreamSpec *ackv1.ACKClusterConfigSpec) e
 	}
 	content, err := json.Marshal(upgradeClusterRequest)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	request.Content = content
-	_, err = svc.ProcessCommonRequest(request)
-	return err
+	upgradeClusterResponseBody := &ackapi.UpgradeClusterResponseBody{}
+	if err = ProcessRequest(svc, request, upgradeClusterResponseBody); err != nil {
+		return nil, err
+	}
+	return upgradeClusterResponseBody, nil
 }
