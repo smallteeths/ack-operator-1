@@ -1,11 +1,10 @@
 package ack
 
 import (
-	ackv1 "github.com/cnrancher/ack-operator/pkg/apis/ack.pandaria.io/v1"
-
-	ackapi "github.com/alibabacloud-go/cs-20151215/v3/client"
+	ackapi "github.com/alibabacloud-go/cs-20151215/v5/client"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
+	ackv1 "github.com/cnrancher/ack-operator/pkg/apis/ack.pandaria.io/v1"
 )
 
 // GetUserConfig returns user config

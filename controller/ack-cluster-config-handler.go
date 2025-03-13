@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	ackapi "github.com/alibabacloud-go/cs-20151215/v3/client"
+	ackapi "github.com/alibabacloud-go/cs-20151215/v5/client"
 	"github.com/alibabacloud-go/tea/tea"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
@@ -140,7 +140,13 @@ func (h *Handler) importCluster(config *ackv1.ACKClusterConfig) (*ackv1.ACKClust
 	if err != nil {
 		return config, err
 	}
-
+	if cluster == nil || cluster.State == nil || *cluster.State != ack.ClusterStatusRunning {
+		state := "unknown"
+		if cluster != nil && cluster.State != nil {
+			state = *cluster.State
+		}
+		return config, fmt.Errorf("the current cluster status is %s. Please wait for the cluster to become %s", state, ack.ClusterStatusRunning)
+	}
 	configUpdate := config.DeepCopy()
 	fixedSpec := FixConfig(&config.Spec, *clusterMap)
 	if fixedSpec == nil {
@@ -151,29 +157,7 @@ func (h *Handler) importCluster(config *ackv1.ACKClusterConfig) (*ackv1.ACKClust
 	if err != nil {
 		return config, err
 	}
-	pauseClusterUpgrade := false
-	clusterIsUpgrading := false
-	if cluster.ClusterId != nil && *cluster.ClusterId != "" {
-		client, err := GetClient(h.secretsCache, &configUpdate.Spec)
-		if err != nil {
-			return config, err
-		}
-		upgradeStatus, err := ack.GetUpgradeStatus(client, &configUpdate.Spec)
-		if err != nil {
-			return config, err
-		}
-		status := upgradeStatus.Status
-		if status == nil {
-			return config, fmt.Errorf("import cluster %s error: the cluster status is nil", *cluster.ClusterId)
-		}
-		if *status == ack.UpdateK8sRunningStatus {
-			clusterIsUpgrading = true
-		} else if *status == ack.UpdateK8sPauseStatus {
-			pauseClusterUpgrade = true
-		}
-		configUpdate.Spec.PauseClusterUpgrade = pauseClusterUpgrade
-		configUpdate.Spec.ClusterIsUpgrading = clusterIsUpgrading
-	}
+
 	configUpdate, err = h.ackCC.Update(configUpdate)
 	if err != nil {
 		return config, err
@@ -268,28 +252,28 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 	if err != nil {
 		return config, err
 	}
-	if config.Spec.ClusterID != "" {
-		upgradeStatus, err := ack.GetUpgradeStatus(client, &config.Spec)
+	if config.Spec.ClusterID != "" && config.Spec.TaskId != "" {
+		taskInfo, err := ack.DescribeTaskInfo(client, &config.Spec)
 		if err != nil {
-			return config, err
+			return config, fmt.Errorf("failed to describe task info for cluster %s: %w", config.Spec.ClusterID, err)
 		}
-		status := upgradeStatus.Status
-		if status == nil {
-			return config, fmt.Errorf("update cluster %s error: the cluster status is nil", config.Spec.ClusterID)
-		}
-		if *status == ack.UpdateK8sRunningStatus {
-			clusterIsUpgrading = true
-		}
-		if *status == ack.UpdateK8sPauseStatus {
-			updateErr := errors.New(fmt.Sprintf(`{"%s":"The cluster upgrade has been pause"}`, ack.UpdateK8SError))
-			return config, updateErr
-		}
-		if *status == ack.UpdateK8sFailStatus {
-			updateErr := errors.New(fmt.Sprintf(`{"%s":"%s"}`, ack.UpdateK8SError, *upgradeStatus.ErrorMessage))
-			return config, updateErr
+		if taskInfo.State != nil {
+			switch *taskInfo.State {
+			case ack.UpdateK8sRunningStatus:
+				clusterIsUpgrading = true
+			case ack.UpdateK8sFailStatus:
+				if taskInfo.Error == nil || taskInfo.Error.Message == nil {
+					return config, fmt.Errorf("update cluster %s failed: error message is missing", config.Spec.ClusterID)
+				}
+				errMsg := fmt.Sprintf(`{"%s":"%s"}`, ack.UpdateK8SError, *taskInfo.Error.Message)
+				return config, fmt.Errorf("update cluster %s failed: %s", config.Spec.ClusterID, errMsg)
+			case ack.UpdateK8sSuccessStatus:
+				config = config.DeepCopy()
+				config.Spec.TaskId = ""
+				return h.ackCC.Update(config)
+			}
 		}
 	}
-
 	// ACK k8s version update
 	if !clusterIsUpgrading &&
 		!config.Spec.PauseClusterUpgrade &&
@@ -297,11 +281,13 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 		(config.Status.Phase == ackConfigActivePhase || strings.Contains(config.Status.FailureMessage, ack.UpdateK8SVersionApiError)) {
 		if config.Spec.KubernetesVersion != utils.GetMapString("current_version", *cluster) {
 			config.Status.Phase = ackConfigUpdatingPhase
-			if err = ack.UpgradeCluster(client, &config.Spec); err != nil {
+			upgradeClusterResponse, err := ack.UpgradeCluster(client, &config.Spec)
+			if err != nil {
 				updateErr := errors.New(fmt.Sprintf(`{"%s":"%s"}`, ack.UpdateK8SVersionApiError, err.Error()))
 				return config, updateErr
 			}
-			return h.ackCC.UpdateStatus(config)
+			config.Spec.TaskId = *upgradeClusterResponse.TaskId
+			return h.ackCC.Update(config)
 		}
 	}
 
@@ -523,24 +509,22 @@ func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *
 	}
 	pauseClusterUpgrade := false
 	clusterIsUpgrading := false
-	if configSpec.ClusterID != "" {
+	if configSpec.ClusterID != "" && configSpec.TaskId != "" {
 		client, err := GetClient(secretsCache, configSpec)
 		if err != nil {
 			return configSpec, err
 		}
-		upgradeStatus, err := ack.GetUpgradeStatus(client, configSpec)
+		taskInfo, err := ack.DescribeTaskInfo(client, configSpec)
 		if err != nil {
-			return configSpec, err
+			return configSpec, fmt.Errorf("failed to describe task info for cluster %s: %w", configSpec.ClusterID, err)
 		}
-		status := upgradeStatus.Status
-		if status == nil {
-			logrus.Warn("Warning BuildUpstreamClusterState: The cluster status is nil, indicating no cluster information is available")
-			return configSpec, nil
-		}
-		if *status == ack.UpdateK8sRunningStatus {
-			clusterIsUpgrading = true
-		} else if *status == ack.UpdateK8sPauseStatus {
-			pauseClusterUpgrade = true
+		if taskInfo.State != nil {
+			switch *taskInfo.State {
+			case ack.UpdateK8sRunningStatus:
+				clusterIsUpgrading = true
+			case ack.UpdateK8sFailStatus:
+				pauseClusterUpgrade = true
+			}
 		}
 	}
 	newSpec := &ackv1.ACKClusterConfigSpec{
@@ -584,8 +568,10 @@ func FixConfig(configSpec *ackv1.ACKClusterConfigSpec, clusterMap map[string]int
 	if configSpec.KubernetesVersion == "" {
 		configSpec.KubernetesVersion = utils.GetMapString("current_version", clusterMap)
 	}
+	configSpec.ClusterSpec = utils.GetMapString("cluster_spec", clusterMap)
 	configSpec.Name = utils.GetMapString("name", clusterMap)
 	configSpec.VswitchIds = strings.Split(utils.GetMapString("vswitch_id", clusterMap)+"", ",") // append empty string, avoid empty pointer value
+	configSpec.PodVswitchIds = strings.Split(utils.GetMapString("pod_vswitch_ids", clusterMap)+"", ",")
 	configSpec.ResourceGroupID = utils.GetMapString("resource_group_id", clusterMap)
 	// only can get these params while state is active
 	var (
