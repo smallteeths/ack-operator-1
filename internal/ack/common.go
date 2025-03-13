@@ -15,7 +15,7 @@ const (
 	DefaultNodePoolName  = "default-nodepool"
 )
 
-// Status indicates how to handle the response from a request to update a resource
+// Status indicates how to handle the respDefaultNodePoolNameonse from a request to update a resource
 type Status int
 
 // Status indicators
@@ -58,6 +58,7 @@ const (
 	UpdateK8sRunningStatus   = "running"
 	UpdateK8sPauseStatus     = "pause"
 	UpdateK8sFailStatus      = "fail"
+	UpdateK8sSuccessStatus   = "success"
 	UpdateK8SError           = "Upgrade k8s version error"
 	UpdateK8SVersionApiError = "Please check that the version of k8s to be upgraded is entered correctly"
 )

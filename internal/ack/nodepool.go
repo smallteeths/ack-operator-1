@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	ackv1 "github.com/cnrancher/ack-operator/pkg/apis/ack.pandaria.io/v1"
-
-	ackapi "github.com/alibabacloud-go/cs-20151215/v3/client"
+	ackapi "github.com/alibabacloud-go/cs-20151215/v5/client"
 	"github.com/alibabacloud-go/tea/tea"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
+	ackv1 "github.com/cnrancher/ack-operator/pkg/apis/ack.pandaria.io/v1"
 )
 
 func newNodePoolCreateRequest(npConfig *ackv1.NodePoolInfo) *ackapi.CreateClusterNodePoolRequest {
@@ -26,16 +25,17 @@ func newNodePoolCreateRequest(npConfig *ackv1.NodePoolInfo) *ackapi.CreateCluste
 
 	return &ackapi.CreateClusterNodePoolRequest{
 		AutoScaling: &ackapi.CreateClusterNodePoolRequestAutoScaling{
-			Enable:                tea.Bool(false),
-			MaxInstances:          tea.Int64(npConfig.InstancesNum),
-			MinInstances:          tea.Int64(npConfig.InstancesNum),
-			Type:                  tea.String(npConfig.ScalingType),
-			IsBondEip:             tea.Bool(npConfig.IsBondEip),
-			EipInternetChargeType: tea.String(npConfig.EipInternetChargeType),
-			EipBandwidth:          tea.Int64(npConfig.EipBandwidth),
+			Enable:       tea.Bool(false),
+			MaxInstances: tea.Int64(npConfig.InstancesNum),
+			MinInstances: tea.Int64(npConfig.InstancesNum),
+			Type:         tea.String(npConfig.ScalingType),
 		},
 		NodepoolInfo: &ackapi.CreateClusterNodePoolRequestNodepoolInfo{
 			Name: tea.String(npConfig.Name),
+		},
+		KubernetesConfig: &ackapi.CreateClusterNodePoolRequestKubernetesConfig{
+			Runtime:        tea.String(npConfig.Runtime),
+			RuntimeVersion: tea.String(npConfig.RuntimeVersion),
 		},
 		ScalingGroup: &ackapi.CreateClusterNodePoolRequestScalingGroup{
 			AutoRenew:          tea.Bool(npConfig.AutoRenew),
@@ -46,10 +46,11 @@ func newNodePoolCreateRequest(npConfig *ackv1.NodePoolInfo) *ackapi.CreateCluste
 			KeyPair:            tea.String(npConfig.KeyPair),
 			Period:             tea.Int64(npConfig.Period),
 			PeriodUnit:         tea.String(npConfig.PeriodUnit),
-			Platform:           tea.String(npConfig.Platform),
+			ImageType:          tea.String(npConfig.Platform),
 			SystemDiskCategory: tea.String(npConfig.SystemDiskCategory),
 			SystemDiskSize:     tea.Int64(npConfig.SystemDiskSize),
 			VswitchIds:         tea.StringSlice(npConfig.VSwitchIds),
+			DesiredSize:        tea.Int64(npConfig.InstancesNum),
 		},
 	}
 }
@@ -119,13 +120,6 @@ func UpdateNodePoolBatch(client *sdk.Client, configSpec *ackv1.ACKClusterConfigS
 		}
 		np.NodepoolId = tea.StringValue(c.NodepoolId)
 		flag = Changed
-		_, errMsg := ScaleUpNodePool(client, configSpec, &np, np.InstancesNum)
-		if errMsg != nil {
-			if !isThrottlingError(err) && !isUnexpectedStatusError(err) {
-				failedMsg = append(failedMsg, fmt.Sprintf("%s(scale up error:%s)", np.NodepoolId, errMsg.Error()))
-			}
-			continue
-		}
 	}
 
 	// update node pool
@@ -416,10 +410,12 @@ func ToNodePoolConfigInfo(nodePoolInfo *ackapi.DescribeClusterNodePoolsResponseB
 			KeyPair:            tea.StringValue(nodePool.ScalingGroup.KeyPair),
 			Period:             tea.Int64Value(nodePool.ScalingGroup.Period),
 			PeriodUnit:         tea.StringValue(nodePool.ScalingGroup.PeriodUnit),
-			Platform:           tea.StringValue(nodePool.ScalingGroup.Platform),
+			Platform:           tea.StringValue(nodePool.ScalingGroup.ImageType),
 			SystemDiskCategory: tea.StringValue(nodePool.ScalingGroup.SystemDiskCategory),
 			SystemDiskSize:     tea.Int64Value(nodePool.ScalingGroup.SystemDiskSize),
 			VSwitchIds:         tea.StringSliceValue(nodePool.ScalingGroup.VswitchIds),
+			Runtime:            tea.StringValue(nodePool.KubernetesConfig.Runtime),
+			RuntimeVersion:     tea.StringValue(nodePool.KubernetesConfig.RuntimeVersion),
 		})
 	}
 	return nodePoolList, nil
