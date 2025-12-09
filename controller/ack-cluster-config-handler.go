@@ -3,21 +3,17 @@ package controller
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
-	ackapi "github.com/alibabacloud-go/cs-20151215/v5/client"
+	ackapi "github.com/alibabacloud-go/cs-20151215/v7/client"
+	util "github.com/alibabacloud-go/tea-utils/v2/service"
 	"github.com/alibabacloud-go/tea/tea"
-	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
-	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	"github.com/cnrancher/ack-operator/internal/ack"
 	ackv1 "github.com/cnrancher/ack-operator/pkg/apis/ack.pandaria.io/v1"
 	v12 "github.com/cnrancher/ack-operator/pkg/generated/controllers/ack.pandaria.io/v1"
-	"github.com/cnrancher/ack-operator/utils"
 	wranglerv1 "github.com/rancher/wrangler/v3/pkg/generated/controllers/core/v1"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
@@ -125,202 +121,117 @@ func (h *Handler) recordError(onChange func(key string, config *ackv1.ACKCluster
 	}
 }
 
-// importCluster returns an active cluster spec containing the given config's clusterName and region/zone
-// and creates a Secret containing the cluster's CA and endpoint retrieved from the cluster object.
-func (h *Handler) importCluster(config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfig, error) {
-	clusterMap, err := GetClusterWithParam(h.secretsCache, &config.Spec)
-	if err != nil {
-		return config, err
-	}
-	if clusterMap == nil {
-		return config, fmt.Errorf("get import cluster error: The cluster is nil, indicating no cluster information is available")
-	}
-	cluster := &ackapi.DescribeClusterDetailResponseBody{}
-	err = utils.ConvertMapToObj(*clusterMap, cluster)
-	if err != nil {
-		return config, err
-	}
-	if cluster == nil || cluster.State == nil || *cluster.State != ack.ClusterStatusRunning {
-		state := "unknown"
-		if cluster != nil && cluster.State != nil {
-			state = *cluster.State
-		}
-		return config, fmt.Errorf("the current cluster status is %s. Please wait for the cluster to become %s", state, ack.ClusterStatusRunning)
-	}
-	configUpdate := config.DeepCopy()
-	fixedSpec := FixConfig(&config.Spec, *clusterMap)
-	if fixedSpec == nil {
-		return config, fmt.Errorf("import cluster error: failed to convert and fix the configuration")
-	}
-	configUpdate.Spec = *fixedSpec
-	configUpdate.Spec.NodePoolList, err = GetNodePoolConfigInfo(h.secretsCache, &config.Spec)
-	if err != nil {
-		return config, err
-	}
-
-	configUpdate, err = h.ackCC.Update(configUpdate)
-	if err != nil {
-		return config, err
-	}
-	configStatus := configUpdate.DeepCopy()
-	if err = h.createCASecret(configStatus, cluster); err != nil {
-		return configStatus, err
-	}
-	configStatus.Status.Phase = ackConfigActivePhase
-	return h.ackCC.UpdateStatus(configStatus)
-}
-
-func (h *Handler) OnAckConfigRemoved(key string, config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfig, error) {
-	if config.Spec.Imported {
-		logrus.Infof("cluster [%s] is imported, will not delete ACK cluster", config.Name)
-		return config, nil
-	}
-	if config.Status.Phase == ackConfigNotCreatedPhase {
-		// The most likely context here is that the cluster already existed in ACK, so we shouldn't delete it
-		logrus.Warnf("cluster [%s] never advanced to creating status, will not delete ACK cluster", config.Name)
-		return config, nil
-	}
-
-	client, err := GetClient(h.secretsCache, &config.Spec)
-	if err != nil {
-		return config, err
-	}
-
-	_, err = GetCluster(h.secretsCache, &config.Spec)
-	if err != nil {
-		logrus.Infof("Get Cluster %v error: %+v", config.Spec.Name, err)
-		if IsNotFound(err) {
-			logrus.Infof("Cluster %v , region %v already removed", config.Spec.Name, config.Spec.RegionID)
-			return config, nil
-		}
-		return config, err
-	}
-
-	logrus.Infof("removing cluster %v , region %v", config.Spec.Name, config.Spec.RegionID)
-	if err := ack.RemoveCluster(client, &config.Spec); err != nil {
-		logrus.Debugf("error deleting cluster %s: %v", config.Spec.Name, err)
-		return config, err
-	}
-
-	return config, nil
-}
-
-func (h *Handler) create(config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfig, error) {
-	if config.Spec.Imported {
-		logrus.Infof("importing cluster [%s]", config.Name)
-		config = config.DeepCopy()
-		config.Status.Phase = ackConfigImportingPhase
-		return h.ackCC.UpdateStatus(config)
-	}
-
-	client, err := GetClient(h.secretsCache, &config.Spec)
-	if err != nil {
-		return config, err
-	}
-
-	// create instance , if in retry logic skip call create api
-	if config.Spec.ClusterID == "" {
-		if err = ack.Create(client, &config.Spec); err != nil {
-			return config, err
-		}
-	}
-
-	configUpdate := config.DeepCopy()
-	configUpdate, err = h.ackCC.Update(configUpdate)
-	if err != nil {
-		return config, err
-	}
-	config = configUpdate.DeepCopy()
-	config.Status.Phase = ackConfigCreatingPhase
-	config, err = h.ackCC.UpdateStatus(config)
-	logrus.Infof("current cluster id:%s", config.Spec.ClusterID)
-	return config, err
-}
-
 func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfig, error) {
-	cluster, err := GetClusterWithParam(h.secretsCache, &config.Spec)
+	cfg := config.DeepCopy()
+
+	cluster, err := ack.DescribeACKCluster(h.secretsCache, &cfg.Spec)
 	if err != nil {
-		return config, err
+		return cfg, err
 	}
 	if cluster == nil {
-		return config, fmt.Errorf("update cluster error: the cluster is nil, indicating no cluster information is available")
+		return cfg, fmt.Errorf("update cluster error: the cluster is nil, indicating no cluster information is available")
 	}
-	clusterState := utils.GetMapString("state", *cluster)
-	logrus.Infof("ackconfig cluster refersh updating %s", config.Name)
-	clusterIsUpgrading := false
-	client, err := GetClient(h.secretsCache, &config.Spec)
-	if err != nil {
-		return config, err
+	var clusterState string
+
+	if cluster.State != nil {
+		clusterState = *cluster.State
+	} else {
+		logrus.Warnf("ACK cluster [%s] state is nil", cfg.Name)
 	}
-	if config.Spec.ClusterID != "" && config.Spec.TaskId != "" {
-		taskInfo, err := ack.DescribeTaskInfo(client, &config.Spec)
-		if err != nil {
-			return config, fmt.Errorf("failed to describe task info for cluster %s: %w", config.Spec.ClusterID, err)
+	logrus.Infof("ackconfig cluster refresh updating %s", cfg.Name)
+	var (
+		clusterIsUpgrading bool
+		client             *ackapi.Client
+	)
+
+	getClient := func() (*ackapi.Client, error) {
+		if client != nil {
+			return client, nil
 		}
+		c, err := ack.NewACKClient(h.secretsCache, &cfg.Spec)
+		if err != nil {
+			return nil, err
+		}
+		client = c
+
+		return client, nil
+	}
+
+	// 检查 ACK 的升级任务状态
+	if cfg.Spec.ClusterID != "" && cfg.Spec.TaskId != "" {
+		client, err := getClient()
+		if err != nil {
+			return cfg, err
+		}
+
+		taskInfo, err := ack.DescribeACKTaskInfo(client, &cfg.Spec)
+		if err != nil {
+			return cfg, fmt.Errorf("failed to describe task info for cluster %s: %w", cfg.Spec.ClusterID, err)
+		}
+
 		if taskInfo.State != nil {
 			switch *taskInfo.State {
 			case ack.UpdateK8sRunningStatus:
 				clusterIsUpgrading = true
 			case ack.UpdateK8sFailStatus:
 				if taskInfo.Error == nil || taskInfo.Error.Message == nil {
-					return config, fmt.Errorf("update cluster %s failed: error message is missing", config.Spec.ClusterID)
+					return cfg, fmt.Errorf("update cluster %s failed: error message is missing", cfg.Spec.ClusterID)
 				}
 				errMsg := fmt.Sprintf(`{"%s":"%s"}`, ack.UpdateK8SError, *taskInfo.Error.Message)
-				return config, fmt.Errorf("update cluster %s failed: %s", config.Spec.ClusterID, errMsg)
+				return cfg, fmt.Errorf("update cluster %s failed: %s", cfg.Spec.ClusterID, errMsg)
 			case ack.UpdateK8sSuccessStatus:
-				config = config.DeepCopy()
-				config.Spec.TaskId = ""
-				return h.ackCC.Update(config)
+				cfg = cfg.DeepCopy()
+				cfg.Spec.TaskId = ""
+				return h.ackCC.Update(cfg)
 			}
-		}
-	}
-	// ACK k8s version update
-	if !clusterIsUpgrading &&
-		!config.Spec.PauseClusterUpgrade &&
-		!config.Spec.ClusterIsUpgrading &&
-		(config.Status.Phase == ackConfigActivePhase || strings.Contains(config.Status.FailureMessage, ack.UpdateK8SVersionApiError)) {
-		if config.Spec.KubernetesVersion != utils.GetMapString("current_version", *cluster) {
-			config.Status.Phase = ackConfigUpdatingPhase
-			upgradeClusterResponse, err := ack.UpgradeCluster(client, &config.Spec)
-			if err != nil {
-				updateErr := errors.New(fmt.Sprintf(`{"%s":"%s"}`, ack.UpdateK8SVersionApiError, err.Error()))
-				return config, updateErr
-			}
-			config.Spec.TaskId = *upgradeClusterResponse.TaskId
-			return h.ackCC.Update(config)
 		}
 	}
 
+	// 如果版本有变更则触发 ACK k8s 版本升级
+	if !clusterIsUpgrading &&
+		!cfg.Spec.PauseClusterUpgrade &&
+		!cfg.Spec.ClusterIsUpgrading &&
+		(cfg.Status.Phase == ackConfigActivePhase || strings.Contains(cfg.Status.FailureMessage, ack.UpdateK8SVersionApiError)) {
+
+		if cluster.CurrentVersion != nil && cfg.Spec.KubernetesVersion != *cluster.CurrentVersion {
+			cfg.Status.Phase = ackConfigUpdatingPhase
+			client, err := getClient()
+			if err != nil {
+				return cfg, err
+			}
+			upgradeClusterResponse, err := ack.UpgradeACKCluster(client, &cfg.Spec)
+			if err != nil {
+				updateErr := errors.New(fmt.Sprintf(`{"%s":"%s"}`, ack.UpdateK8SVersionApiError, err.Error()))
+				return cfg, updateErr
+			}
+			if upgradeClusterResponse.TaskId == nil {
+				return cfg, fmt.Errorf("upgrade ACK cluster succeeded but taskId is nil")
+			}
+
+			cfg.Spec.TaskId = *upgradeClusterResponse.TaskId
+			return h.ackCC.Update(cfg)
+		}
+	}
+
+	// 集群级别处于变更中，需要等待集群变为 active
 	if clusterState == ack.ClusterStatusUpdating ||
 		clusterState == ack.ClusterStatusScaling ||
 		clusterState == ack.ClusterStatusRemoving ||
 		clusterIsUpgrading {
-		// upstream cluster is already updating, must wait until sending next update
-		logrus.Infof("waiting for cluster [%s] to finish %s", config.Name, clusterState)
-		if config.Status.Phase != ackConfigUpdatingPhase {
-			config = config.DeepCopy()
-			config.Status.Phase = ackConfigUpdatingPhase
-			return h.ackCC.UpdateStatus(config)
+		logrus.Infof("waiting for cluster [%s] to finish %s", cfg.Name, clusterState)
+		if cfg.Status.Phase != ackConfigUpdatingPhase {
+			cfg = cfg.DeepCopy()
+			cfg.Status.Phase = ackConfigUpdatingPhase
+			return h.ackCC.UpdateStatus(cfg)
 		}
-		h.ackEnqueueAfter(config.Namespace, config.Name, 30*time.Second)
-		return config, nil
+		h.ackEnqueueAfter(cfg.Namespace, cfg.Name, 30*time.Second)
+		return cfg, nil
 	}
 
-	updateConfig := config.DeepCopy()
-	// fix config fields
-	fixedSpec := FixConfig(&config.Spec, *cluster)
-	if fixedSpec == nil {
-		return config, fmt.Errorf("update cluster error: failed to convert and fix the configuration")
-	}
-	updateConfig.Spec = *fixedSpec
-	updateConfig, err = h.ackCC.Update(updateConfig)
+	// 对应 ACK NodePool 的状态需要等待节点都创建完成
+	nodePoolsInfo, err := ack.DescribeACKClusterNodePools(h.secretsCache, &cfg.Spec)
 	if err != nil {
-		return config, err
-	}
-	config = updateConfig.DeepCopy()
-	nodePoolsInfo, err := GetNodePools(h.secretsCache, &config.Spec)
-	if err != nil {
-		return config, err
+		return cfg, err
 	}
 	for _, np := range nodePoolsInfo.Nodepools {
 		if np == nil {
@@ -331,27 +242,34 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 			logrus.Warn("Warning update cluster: The nodepool status is nil, indicating no nodepool information is available")
 			continue
 		}
+
 		status := *np.Status.State
-		if status == ack.NodePoolStatusScaling || status == ack.NodePoolStatusDeleting || status == ack.NodePoolStatusInitial || status == ack.NodePoolStatusUpdating || status == ack.NodePoolStatusRemoving {
-			if config.Status.Phase != ackConfigUpdatingPhase {
-				config = config.DeepCopy()
-				config.Status.Phase = ackConfigUpdatingPhase
-				config, err = h.ackCC.UpdateStatus(config)
+		if status == ack.NodePoolStatusScaling ||
+			status == ack.NodePoolStatusDeleting ||
+			status == ack.NodePoolStatusInitial ||
+			status == ack.NodePoolStatusUpdating ||
+			status == ack.NodePoolStatusRemoving {
+			if cfg.Status.Phase != ackConfigUpdatingPhase {
+				cfg = cfg.DeepCopy()
+				cfg.Status.Phase = ackConfigUpdatingPhase
+				cfg, err = h.ackCC.UpdateStatus(cfg)
 				if err != nil {
-					return config, err
+					return cfg, err
 				}
 			}
-			logrus.Infof("waiting for cluster [%s] to update node pool [%s]", config.Name, *np.NodepoolInfo.Name)
-			h.ackEnqueueAfter(config.Namespace, config.Name, 30*time.Second)
-			return config, nil
+			logrus.Infof("waiting for cluster [%s] to update node pool [%s]", cfg.Name, *np.NodepoolInfo.Name)
+			h.ackEnqueueAfter(cfg.Namespace, cfg.Name, 30*time.Second)
+			return cfg, nil
 		}
 	}
-	upstreamSpec, err := BuildUpstreamClusterState(h.secretsCache, &config.Spec)
+
+	// 创建完成之后获得当前集群的一些信息
+	upstreamSpec, err := BuildUpstreamClusterState(h.secretsCache, &cfg.Spec)
 	if err != nil {
-		return config, err
+		return cfg, err
 	}
 
-	return h.updateUpstreamClusterState(config, upstreamSpec)
+	return h.updateUpstreamClusterState(cfg, upstreamSpec)
 }
 
 // enqueueUpdate enqueues the config if it is already in the updating phase. Otherwise, the
@@ -378,31 +296,33 @@ func (h *Handler) enqueueUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClust
 
 // updateUpstreamClusterState sync config to upstream cluster
 func (h *Handler) updateUpstreamClusterState(config *ackv1.ACKClusterConfig, upstreamSpec *ackv1.ACKClusterConfigSpec) (*ackv1.ACKClusterConfig, error) {
-	client, err := GetClient(h.secretsCache, &config.Spec)
+	client, err := ack.NewACKClient(h.secretsCache, &config.Spec)
 	if err != nil {
 		return config, err
 	}
-
-	var changed ack.Status
-	changed, err = ack.UpdateNodePoolBatch(client, &config.Spec)
+	changed := ack.NotChanged
+	// 暂时只支持更新 cluster Name 和 nodepool 数量
+	if config.Spec.Name != upstreamSpec.Name {
+		_, err := ack.ModifyACKCluster(client, upstreamSpec)
+		if err != nil {
+			return config, err
+		}
+		changed = ack.Changed
+	}
+	changed, err = ack.BatchUpdateClusterNodePools(client, &config.Spec)
 	if err != nil {
 		return config, err
 	}
 	if changed == ack.Changed {
+		// 有变更，进入 Updating 状态
 		return h.setUpdatingPhase(config)
 	}
-
-	// no new updates, set to active
+	// 没有新的更新：如果不在 Active，就标记为 Active
 	if config.Status.Phase != ackConfigActivePhase {
 		logrus.Infof("cluster [%s] finished updating", config.Name)
-		configUpdate := config.DeepCopy()
-		configUpdate, err = h.ackCC.Update(configUpdate)
-		if err != nil {
-			return config, err
-		}
-		config = configUpdate.DeepCopy()
-		config.Status.Phase = ackConfigActivePhase
-		return h.ackCC.UpdateStatus(config)
+		cfg := config.DeepCopy()
+		cfg.Status.Phase = ackConfigActivePhase
+		return h.ackCC.UpdateStatus(cfg)
 	}
 
 	return config, nil
@@ -420,7 +340,7 @@ func (h *Handler) setUpdatingPhase(config *ackv1.ACKClusterConfig) (*ackv1.ACKCl
 }
 
 func (h *Handler) waitForCreationComplete(config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfig, error) {
-	cluster, err := GetCluster(h.secretsCache, &config.Spec)
+	cluster, err := ack.DescribeACKCluster(h.secretsCache, &config.Spec)
 	if err != nil {
 		return config, err
 	}
@@ -445,258 +365,28 @@ func (h *Handler) waitForCreationComplete(config *ackv1.ACKClusterConfig) (*ackv
 	return config, nil
 }
 
-func GetNodePools(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) (*ackapi.DescribeClusterNodePoolsResponseBody, error) {
-	client, err := GetClient(secretsCache, configSpec)
-	if err != nil {
-		return nil, err
-	}
-	return ack.GetNodePools(client, configSpec)
-}
-
-func GetClient(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) (*sdk.Client, error) {
-	ns, id := utils.Parse(configSpec.AliyunCredentialSecret)
-	if aliyunCredentialSecret := configSpec.AliyunCredentialSecret; aliyunCredentialSecret != "" {
-		secret, err := secretsCache.Get(ns, id)
-		if err != nil {
-			return nil, err
-		}
-
-		accessKeyBytes := secret.Data["aliyunecscredentialConfig-accessKeyId"]
-		secretKeyBytes := secret.Data["aliyunecscredentialConfig-accessKeySecret"]
-		if accessKeyBytes == nil || secretKeyBytes == nil {
-			return nil, fmt.Errorf("invalid aliyun cloud credential")
-		}
-
-		return ack.GetACKClient(
-			configSpec.RegionID,
-			string(accessKeyBytes),
-			string(secretKeyBytes),
-		)
-	}
-	return nil, fmt.Errorf("error while getting aliyunCredentialSecret")
-}
-
-func GetCluster(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) (*ackapi.DescribeClusterDetailResponseBody, error) {
-	client, err := GetClient(secretsCache, configSpec)
-	if err != nil {
-		return nil, err
-	}
-
-	return ack.GetCluster(client, configSpec)
-}
-
-func GetClusterWithParam(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) (*map[string]interface{}, error) {
-	client, err := GetClient(secretsCache, configSpec)
-	if err != nil {
-		return nil, err
-	}
-
-	return ack.GetClusterWithParams(client, configSpec)
-}
-
-func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) (*ackv1.ACKClusterConfigSpec, error) {
-	if configSpec == nil {
-		logrus.Warn("Warning BuildUpstreamClusterState: The 'configSpec' data is nil, the cluster's configSpec is not available")
-		return configSpec, nil
-	}
-	cluster, err := GetCluster(secretsCache, configSpec)
-	if err != nil {
-		return configSpec, err
-	}
-	if cluster == nil {
-		logrus.Warn("Warning BuildUpstreamClusterState: Get cluster is nil, indicating no cluster information is available")
-		return configSpec, nil
-	}
-	pauseClusterUpgrade := false
-	clusterIsUpgrading := false
-	if configSpec.ClusterID != "" && configSpec.TaskId != "" {
-		client, err := GetClient(secretsCache, configSpec)
-		if err != nil {
-			return configSpec, err
-		}
-		taskInfo, err := ack.DescribeTaskInfo(client, configSpec)
-		if err != nil {
-			return configSpec, fmt.Errorf("failed to describe task info for cluster %s: %w", configSpec.ClusterID, err)
-		}
-		if taskInfo.State != nil {
-			switch *taskInfo.State {
-			case ack.UpdateK8sRunningStatus:
-				clusterIsUpgrading = true
-			case ack.UpdateK8sFailStatus:
-				pauseClusterUpgrade = true
-			}
-		}
-	}
-	newSpec := &ackv1.ACKClusterConfigSpec{
-		Name:                tea.StringValue(cluster.Name),
-		ClusterID:           tea.StringValue(cluster.ClusterId),
-		ClusterType:         tea.StringValue(cluster.ClusterType),
-		KubernetesVersion:   tea.StringValue(cluster.CurrentVersion),
-		RegionID:            tea.StringValue(cluster.RegionId),
-		VpcID:               tea.StringValue(cluster.VpcId),
-		PauseClusterUpgrade: pauseClusterUpgrade,
-		ClusterIsUpgrading:  clusterIsUpgrading,
-	}
-	newSpec.NodePoolList, err = GetNodePoolConfigInfo(secretsCache, configSpec)
-	if err != nil {
-		return configSpec, err
-	}
-
-	return newSpec, nil
-}
-
-func GetNodePoolConfigInfo(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) ([]ackv1.NodePoolInfo, error) {
-	nodePoolInfo, err := GetNodePools(secretsCache, configSpec)
-	if err != nil {
-		return nil, err
-	}
-	return ack.ToNodePoolConfigInfo(nodePoolInfo)
-}
-
-func GetUserConfig(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) (*ackapi.DescribeClusterUserKubeconfigResponseBody, error) {
-	client, err := GetClient(secretsCache, configSpec)
-	if err != nil {
-		return nil, err
-	}
-	return ack.GetUserConfig(client, configSpec)
-}
-
-// FixConfig fix fields for imported clusters
-func FixConfig(configSpec *ackv1.ACKClusterConfigSpec, clusterMap map[string]interface{}) *ackv1.ACKClusterConfigSpec {
-	// update known field from query result
-	configSpec.ClusterType = utils.GetMapString("cluster_type", clusterMap)
-	if configSpec.KubernetesVersion == "" {
-		configSpec.KubernetesVersion = utils.GetMapString("current_version", clusterMap)
-	}
-	configSpec.ClusterSpec = utils.GetMapString("cluster_spec", clusterMap)
-	configSpec.Name = utils.GetMapString("name", clusterMap)
-	configSpec.VswitchIds = strings.Split(utils.GetMapString("vswitch_id", clusterMap)+"", ",") // append empty string, avoid empty pointer value
-	configSpec.PodVswitchIds = strings.Split(utils.GetMapString("pod_vswitch_ids", clusterMap)+"", ",")
-	configSpec.ResourceGroupID = utils.GetMapString("resource_group_id", clusterMap)
-	// only can get these params while state is active
-	var (
-		params  map[string]interface{}
-		outputs []interface{}
-	)
-	if clusterMap["parameters"] != nil {
-		params = clusterMap["parameters"].(map[string]interface{})
-	}
-	if clusterMap["outputs"] != nil {
-		outputs = clusterMap["outputs"].([]interface{})
-	}
-
-	if params != nil {
-		// for masters
-		if configSpec.ClusterType == "Kubernetes" {
-			configSpec.MasterCount = utils.GetMapInt64("MasterCount", params)
-			configSpec.MasterInstanceTypes = strings.Split(utils.GetMapString("MasterInstanceTypes", params), ",")
-			configSpec.MasterInstanceChargeType = utils.GetMapString("MasterInstanceChargeType", params)
-			configSpec.MasterPeriod = utils.GetMapInt64("MasterPeriod", params)
-			configSpec.MasterPeriodUnit = utils.GetMapString("MasterPeriodUnit", params)
-			configSpec.MasterAutoRenew = utils.GetMapBoolean("MasterAutoRenew", params)
-			configSpec.MasterAutoRenewPeriod = utils.GetMapInt64("MasterAutoRenewPeriod", params)
-			configSpec.MasterSystemDiskCategory = utils.GetMapString("MasterSystemDiskCategory", params)
-			configSpec.MasterSystemDiskSize = utils.GetMapInt64("MasterSystemDiskSize", params)
-			configSpec.MasterVswitchIds = strings.Split(utils.GetMapString("MasterVSwitchIds", params), ",")
-		}
-		if len(configSpec.MasterVswitchIds) == 0 { // display on ui, can not be empty
-			configSpec.MasterVswitchIds = configSpec.VswitchIds
-		}
-
-		configSpec.ResourceGroupID = utils.GetMapString("ResourceGroupId", params)
-		configSpec.ContainerCidr = utils.GetMapString("ContainerCIDR", params)
-		configSpec.ServiceCidr = utils.GetMapString("ServiceCIDR", params)
-		configSpec.VpcID = utils.GetMapString("VpcId", params)
-
-		configSpec.SnatEntry = configSpec.SnatEntry || utils.GetMapBoolean("SNatEntry", params)
-		configSpec.EndpointPublicAccess = configSpec.EndpointPublicAccess || utils.GetMapBoolean("Eip", params)
-
-		// SetUpArgs --node-cidr-mask 26
-		nodeCidrMask := utils.GetArgValueByKey("--node-cidr-mask", utils.GetMapString("SetUpArgs", params))
-		if nodeCidrMask != "" {
-			maskNum, err := strconv.Atoi(nodeCidrMask)
-			if err != nil {
-				logrus.Warnf("get node-cidr-mask failed:%s", nodeCidrMask)
-			} else {
-				configSpec.NodeCidrMask = int64(maskNum)
-			}
-		}
-	}
-
-	for _, output := range outputs {
-		key := output.(map[string]interface{})["OutputKey"]
-		if key != nil {
-			if key.(string) == "ProxyMode" {
-				if value := output.(map[string]interface{})["OutputValue"]; value != nil {
-					configSpec.ProxyMode = value.(string)
-				}
-			}
-		}
-	}
-
-	return configSpec
-}
-
-// FixClusterId fix empty field clusterId , only for clusters which create by ack-operator
-func FixClusterId(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClusterConfigSpec) error {
-	client, err := GetClient(secretsCache, configSpec)
-	if err != nil {
-		return err
-	}
-
-	clusters, err := ack.GetClusters(client, configSpec)
-	if err != nil {
-		return err
-	}
-	if clusters == nil || clusters.Clusters == nil {
-		return fmt.Errorf("fix cluster id error: Get the clusters is nil, indicating no cluster information is available")
-	}
-	if len(clusters.Clusters) == 1 {
-		if *clusters.Clusters[0].Name == configSpec.Name {
-			configSpec.ClusterID = *clusters.Clusters[0].ClusterId
-		} else {
-			logrus.Warnf("error while fix cluster id ,cluster name get :%s,but excped is %s", *clusters.Clusters[0].Name, configSpec.Name)
-		}
-	} else {
-		// return error will block process to return error message
-		logrus.Warnf("error while fix cluster id ,return unexceptd cluster(s):%d", len(clusters.Clusters))
-	}
-
-	return nil
-}
-
 // createCASecret creates a secret containing a CA and endpoint for use in generating a kubeconfig file.
 func (h *Handler) createCASecret(config *ackv1.ACKClusterConfig, cluster *ackapi.DescribeClusterDetailResponseBody) error {
-	client, err := GetClient(h.secretsCache, &config.Spec)
+	client, err := ack.NewACKClient(h.secretsCache, &config.Spec)
 	if err != nil {
 		return err
 	}
-
-	request := requests.NewCommonRequest()
-	request.Method = "GET"
-	request.Scheme = "https"
-	request.Domain = "cs." + config.Spec.RegionID + ".aliyuncs.com"
-	request.Version = ack.DefaultACKAPIVersion
-	request.PathPattern = "/k8s/" + config.Spec.ClusterID + "/user_config"
-	request.Headers["Content-Type"] = "application/json"
-
-	body := `{}`
-	request.Content = []byte(body)
-
-	response, err := client.ProcessCommonRequest(request)
+	req := &ackapi.DescribeClusterUserKubeconfigRequest{}
+	headers := map[string]*string{}
+	runtime := &util.RuntimeOptions{}
+	resp, err := client.DescribeClusterUserKubeconfigWithOptions(tea.String(config.Spec.ClusterID), req, headers, runtime)
+	if err != nil {
+		return fmt.Errorf("describe ACK cluster user kubeconfig failed: %w", err)
+	}
+	if resp.Body == nil || resp.Body.Config == nil {
+		return fmt.Errorf("describe ACK cluster user kubeconfig succeeded but config is nil")
+	}
+	kubeConfig := tea.StringValue(resp.Body.Config)
+	// Get kubeconfig from kube-rest-config
+	restConfig, err := clientcmd.RESTConfigFromKubeConfig([]byte(kubeConfig))
 	if err != nil {
 		return err
 	}
-
-	kubeConfig := &ackapi.DescribeClusterUserKubeconfigResponseBody{}
-	if err = json.Unmarshal(response.GetHttpContentBytes(), kubeConfig); err != nil {
-		return err
-	}
-	restConfig, err := clientcmd.RESTConfigFromKubeConfig([]byte(*kubeConfig.Config))
-	if err != nil {
-		return err
-	}
-
 	_, err = h.secrets.Create(
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
@@ -720,12 +410,6 @@ func (h *Handler) createCASecret(config *ackv1.ACKClusterConfig, cluster *ackapi
 		logrus.Debugf("CA secret [%s] already exists, ignoring", config.Name)
 		return nil
 	}
-	return err
-}
 
-func IsNotFound(err error) bool {
-	if strings.Contains(err.Error(), "ErrorClusterNotFound") {
-		return true
-	}
-	return false
+	return err
 }
