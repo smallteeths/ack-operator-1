@@ -251,7 +251,7 @@ func BatchUpdateClusterNodePools(client *ackapi.Client, configSpec *ackv1.ACKClu
 
 	// 聚合错误信息
 	if len(failedMsg) > 0 {
-		return Changed, fmt.Errorf(strings.Join(failedMsg, ";"))
+		return Changed, fmt.Errorf("%s", strings.Join(failedMsg, ";"))
 	}
 
 	return flag, nil
