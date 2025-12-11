@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -201,7 +200,8 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 			}
 			upgradeClusterResponse, err := ack.UpgradeACKCluster(client, &cfg.Spec)
 			if err != nil {
-				updateErr := errors.New(fmt.Sprintf(`{"%s":"%s"}`, ack.UpdateK8SVersionApiError, err.Error()))
+				updateErr := fmt.Errorf(`{"%s":"%s"}`, ack.UpdateK8SVersionApiError, err.Error())
+
 				return cfg, updateErr
 			}
 			if upgradeClusterResponse.TaskId == nil {
@@ -301,23 +301,22 @@ func (h *Handler) updateUpstreamClusterState(config *ackv1.ACKClusterConfig, ups
 		return config, err
 	}
 	changed := ack.NotChanged
-	// 暂时只支持更新 cluster Name 和 nodepool 数量
 	if config.Spec.Name != upstreamSpec.Name {
-		_, err := ack.ModifyACKCluster(client, upstreamSpec)
-		if err != nil {
+		if _, err := ack.ModifyACKCluster(client, upstreamSpec); err != nil {
 			return config, err
 		}
 		changed = ack.Changed
 	}
-	changed, err = ack.BatchUpdateClusterNodePools(client, &config.Spec)
+	nodepoolChanged, err := ack.BatchUpdateClusterNodePools(client, &config.Spec)
 	if err != nil {
 		return config, err
 	}
+	if nodepoolChanged == ack.Changed {
+		changed = ack.Changed
+	}
 	if changed == ack.Changed {
-		// 有变更，进入 Updating 状态
 		return h.setUpdatingPhase(config)
 	}
-	// 没有新的更新：如果不在 Active，就标记为 Active
 	if config.Status.Phase != ackConfigActivePhase {
 		logrus.Infof("cluster [%s] finished updating", config.Name)
 		cfg := config.DeepCopy()

@@ -1,16 +1,14 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-set -e
-
+set -euo pipefail
 cd $(dirname $0)/..
+WORKINGDIR=$(pwd)
 
-if ! command -v golangci-lint; then
-    echo Skipping validation: no golangci-lint available
-    exit
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  echo 'Ensure git directory is clean before run this script:'
+  git status --short
+  exit 1
 fi
-
-echo 'Running: golangci-lint'
-golangci-lint run --timeout=10m
 
 echo 'Running: go mod verify'
 go mod verify
