@@ -10,13 +10,16 @@ import (
 	"github.com/rancher/wrangler/v3/pkg/controller-gen/args"
 	"github.com/rancher/wrangler/v3/pkg/crd"
 	"github.com/rancher/wrangler/v3/pkg/yaml"
+	"github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func main() {
-	os.Unsetenv("GOPATH")
+	if err := os.Unsetenv("GOPATH"); err != nil {
+		logrus.Printf("failed to unset GOPATH: %v", err)
+	}
 
 	controllergen.Run(args.Options{
 		OutputPackage: "github.com/cnrancher/ack-operator/pkg/generated",
@@ -89,7 +92,9 @@ func saveCRDYaml(name, yaml string) error {
 		return err
 	}
 
-	defer save.Close()
+	defer func() {
+		_ = save.Close()
+	}()
 	if err := save.Chmod(0755); err != nil {
 		return err
 	}
