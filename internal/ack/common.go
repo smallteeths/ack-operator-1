@@ -2,12 +2,12 @@ package ack
 
 import (
 	"fmt"
-	"github.com/alibabacloud-go/tea/tea"
 	"strconv"
 	"strings"
 	"time"
 
 	ackapi "github.com/alibabacloud-go/cs-20151215/v7/client"
+	"github.com/alibabacloud-go/tea/tea"
 	ackv1 "github.com/cnrancher/ack-operator/pkg/apis/ack.pandaria.io/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -111,10 +111,7 @@ func StringPtrSliceToStringSliceRaw(src []*string) []string {
 }
 
 func IsNotFound(err error) bool {
-	if strings.Contains(err.Error(), "ErrorClusterNotFound") {
-		return true
-	}
-	return false
+	return strings.Contains(err.Error(), "ErrorClusterNotFound")
 }
 
 // validateCreateRequest checks a config for the ability to generate a create request
