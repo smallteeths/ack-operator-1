@@ -36,6 +36,7 @@ func NewACKClient(secretsCache wranglerv1.SecretCache, configSpec *ackv1.ACKClus
 	accessKeySecret := string(secretKeyBytes)
 	// 构造 Credential
 	credConfig := &credential.Config{
+		Type:            tea.String("access_key"),
 		AccessKeyId:     tea.String(accessKeyId),
 		AccessKeySecret: tea.String(accessKeySecret),
 		// to do STS，可再加 SecurityToken: tea.String(token)

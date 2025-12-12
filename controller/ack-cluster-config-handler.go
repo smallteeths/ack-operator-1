@@ -192,7 +192,7 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 		!cfg.Spec.ClusterIsUpgrading &&
 		(cfg.Status.Phase == ackConfigActivePhase || strings.Contains(cfg.Status.FailureMessage, ack.UpdateK8SVersionApiError)) {
 
-		if cluster.CurrentVersion != nil && cfg.Spec.KubernetesVersion != *cluster.CurrentVersion {
+		if cluster.CurrentVersion != nil && cfg.Spec.KubernetesVersion != *cluster.CurrentVersion && !cfg.Spec.Imported {
 			cfg.Status.Phase = ackConfigUpdatingPhase
 			client, err := getClient()
 			if err != nil {
@@ -296,23 +296,25 @@ func (h *Handler) enqueueUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClust
 
 // updateUpstreamClusterState sync config to upstream cluster
 func (h *Handler) updateUpstreamClusterState(config *ackv1.ACKClusterConfig, upstreamSpec *ackv1.ACKClusterConfigSpec) (*ackv1.ACKClusterConfig, error) {
-	client, err := ack.NewACKClient(h.secretsCache, &config.Spec)
-	if err != nil {
-		return config, err
-	}
 	changed := ack.NotChanged
-	if config.Spec.Name != upstreamSpec.Name {
-		if _, err := ack.ModifyACKCluster(client, upstreamSpec); err != nil {
+	if !config.Spec.Imported {
+		client, err := ack.NewACKClient(h.secretsCache, &config.Spec)
+		if err != nil {
 			return config, err
 		}
-		changed = ack.Changed
-	}
-	nodepoolChanged, err := ack.BatchUpdateClusterNodePools(client, &config.Spec)
-	if err != nil {
-		return config, err
-	}
-	if nodepoolChanged == ack.Changed {
-		changed = ack.Changed
+		if config.Spec.Name != upstreamSpec.Name {
+			if _, err := ack.ModifyACKCluster(client, upstreamSpec); err != nil {
+				return config, err
+			}
+			changed = ack.Changed
+		}
+		nodepoolChanged, err := ack.BatchUpdateClusterNodePools(client, &config.Spec)
+		if err != nil {
+			return config, err
+		}
+		if nodepoolChanged == ack.Changed {
+			changed = ack.Changed
+		}
 	}
 	if changed == ack.Changed {
 		return h.setUpdatingPhase(config)
