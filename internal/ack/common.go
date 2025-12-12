@@ -147,8 +147,8 @@ func newClusterCreateRequest(configSpec *ackv1.ACKClusterConfigSpec) *ackapi.Cre
 	req.SshFlags = tea.Bool(configSpec.SSHFlags)
 	req.Addons = ConvertAddons(configSpec)
 	req.VswitchIds = tea.StringSlice(configSpec.VswitchIds)
-	// 在 Terway 网络模式下，Pod 网络的 IP 地址分配方式已优化，不再需要单独指定 pod_vswitch_ids，而是直接使用 vswitch_ids
-	//req.PodVswitchIds = tea.StringSlice(configSpec.PodVswitchIds)
+	// PodVswitchIds 虽然标记了废弃，但是目前还是需要传入
+	req.PodVswitchIds = tea.StringSlice(configSpec.PodVswitchIds)
 
 	// get worker creation info from default node pool
 	getInitWorkerFromDefaultNodePool(configSpec, req)
