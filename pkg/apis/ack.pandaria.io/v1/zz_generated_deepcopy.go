@@ -121,6 +121,11 @@ func (in *ACKClusterConfigSpec) DeepCopyInto(out *ACKClusterConfigSpec) {
 		*out = make([]Addon, len(*in))
 		copy(*out, *in)
 	}
+	if in.ZoneIDs != nil {
+		in, out := &in.ZoneIDs, &out.ZoneIDs
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 

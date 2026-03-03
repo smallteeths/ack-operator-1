@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+
 	ackapi "github.com/alibabacloud-go/cs-20151215/v7/client"
 
 	"github.com/alibabacloud-go/tea/tea"
@@ -35,6 +36,11 @@ func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *
 	newSpec.KubernetesVersion = tea.StringValue(cluster.CurrentVersion)
 	newSpec.RegionID = tea.StringValue(cluster.RegionId)
 	newSpec.VpcID = tea.StringValue(cluster.VpcId)
+	if len(configSpec.ZoneIDs) > 0 {
+		newSpec.ZoneIDs = configSpec.ZoneIDs
+	} else {
+		newSpec.ZoneIDs = []string{tea.StringValue(cluster.ZoneId)}
+	}
 	newSpec.PauseClusterUpgrade = pauseClusterUpgrade
 	newSpec.ClusterIsUpgrading = clusterIsUpgrading
 	newSpec.NodePoolList, err = GetNodePoolConfigInfo(secretsCache, configSpec)

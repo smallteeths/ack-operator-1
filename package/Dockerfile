@@ -8,6 +8,6 @@ RUN zypper update -y && \
 
 RUN useradd --uid 1007 ack-operator
 ENV KUBECONFIG /home/ack-operator/.kube/config
-COPY dist/ack-operator_linux_${TARGETARCH}*/ /usr/bin/
+COPY dist/ /usr/bin/
 USER 1007
 ENTRYPOINT ["ack-operator"]

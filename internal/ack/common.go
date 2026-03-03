@@ -120,10 +120,16 @@ func validateCreateRequest(configSpec *ackv1.ACKClusterConfigSpec) error {
 		return fmt.Errorf("cluster display name is required")
 	} else if configSpec.RegionID == "" {
 		return fmt.Errorf("region id is required")
-	} else if configSpec.VpcID == "" && !configSpec.SnatEntry {
-		return fmt.Errorf("snat entry is required when vpc is auto created")
 	}
-
+	if len(configSpec.ZoneIDs) == 0 {
+		if configSpec.VpcID == "" {
+			return fmt.Errorf("vpcId is required if zoneIds are not provided")
+		} else if len(configSpec.VswitchIds) == 0 {
+			return fmt.Errorf("vSwitchIds are required if zoneIds are not provided")
+		}
+	} else if configSpec.VpcID != "" || len(configSpec.VswitchIds) != 0 {
+		return fmt.Errorf("zoneIds should not be used together with vpcId and vSwitchIds")
+	}
 	return nil
 }
 
@@ -147,6 +153,7 @@ func newClusterCreateRequest(configSpec *ackv1.ACKClusterConfigSpec) *ackapi.Cre
 	req.SshFlags = tea.Bool(configSpec.SSHFlags)
 	req.Addons = ConvertAddons(configSpec)
 	req.VswitchIds = tea.StringSlice(configSpec.VswitchIds)
+	req.ZoneIds = tea.StringSlice(configSpec.ZoneIDs)
 	// PodVswitchIds 虽然标记了废弃，但是目前还是需要传入
 	req.PodVswitchIds = tea.StringSlice(configSpec.PodVswitchIds)
 

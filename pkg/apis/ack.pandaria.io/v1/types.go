@@ -76,6 +76,8 @@ type ACKClusterConfigSpec struct {
 	ClusterIsUpgrading  bool    `json:"clusterIsUpgrading"`
 	TaskId              string  `json:"taskId"`
 	Addons              []Addon `json:"addons,omitempty" norman:"noupdate"`
+	// 创建新的 vpc vswitch
+	ZoneIDs []string `json:"zoneIds,omitempty" norman:"noupdate"`
 }
 
 type ACKClusterConfigStatus struct {
