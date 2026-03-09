@@ -125,13 +125,43 @@ func BatchUpdateClusterNodePools(client *ackapi.Client, configSpec *ackv1.ACKClu
 		np.NodepoolId = tea.StringValue(c.NodepoolId)
 		flag = Changed
 	}
-	// 更新 nodepool只处理实例数变化
+	// 更新 nodepool只处理实例数变化，和 autoscaling 比昂话
 	for _, np := range updateQueue {
 		unp, ok := upstreamNodePoolInfoMap[np.NodepoolId]
 		if !ok {
-			// 上游没有这个 nodepool（可能已被删除），这里直接跳过
 			continue
 		}
+		// 配置变更，调用 ModifyClusterNodePool 修改自动扩容
+		if autoscalingChanged(unp, np) {
+			flag = Changed
+			minIns, maxIns := effectiveMinMax(np)
+			enable := autoscalingEnabled(np)
+			req := &ackapi.ModifyClusterNodePoolRequest{
+				AutoScaling: &ackapi.ModifyClusterNodePoolRequestAutoScaling{
+					Enable:       tea.Bool(enable),
+					MinInstances: tea.Int64(minIns),
+					MaxInstances: tea.Int64(maxIns),
+				},
+			}
+			headers := map[string]*string{}
+			runtime := &util.RuntimeOptions{}
+			_, errMsg := client.ModifyClusterNodePoolWithOptions(tea.String(configSpec.ClusterID), tea.String(np.NodepoolId), req, headers, runtime)
+			if errMsg != nil {
+				if !isThrottlingError(errMsg) && !isUnexpectedStatusError(errMsg) {
+					failedMsg = append(failedMsg, fmt.Sprintf("%s(modify autoscaling error:%s)", np.NodepoolId, errMsg.Error()))
+				}
+				// autoscaling 修改失败就继续处理下一个
+				continue
+			}
+			if enable {
+				continue
+			}
+		}
+		// 若 autoscaling 开启：直接跳过 InstancesNum 的 scale 逻辑
+		if autoscalingEnabled(np) {
+			continue
+		}
+		// InstancesNum scale
 		if unp.InstancesNum == np.InstancesNum {
 			continue
 		}
@@ -165,7 +195,7 @@ func BatchUpdateClusterNodePools(client *ackapi.Client, configSpec *ackv1.ACKClu
 		if scaleDownNum <= 0 {
 			continue
 		}
-		// 取前 scaleDownNum 个节点名
+		// 获取当前 scaleDownNum 个节点名
 		var nodeNames []string
 		for i := 0; i < int(scaleDownNum) && i < len(nodePool.Nodes); i++ {
 			if nodePool.Nodes[i].NodeName != nil {
@@ -206,7 +236,31 @@ func BatchUpdateClusterNodePools(client *ackapi.Client, configSpec *ackv1.ACKClu
 		}
 		// 本地 spec 中已经没有了这个 nodepool，需要删除
 		flag = Changed
+		// 如果 autoscaling 开启，删除时需要先关闭
+		if up, ok := upstreamNodePoolInfoMap[npId]; ok && autoscalingEnabled(up) {
+			req := &ackapi.ModifyClusterNodePoolRequest{
+				AutoScaling: &ackapi.ModifyClusterNodePoolRequestAutoScaling{
+					Enable: tea.Bool(false),
+				},
+			}
+			headers := map[string]*string{}
+			runtime := &util.RuntimeOptions{}
 
+			_, err := client.ModifyClusterNodePoolWithOptions(
+				tea.String(configSpec.ClusterID),
+				tea.String(npId),
+				req,
+				headers,
+				runtime,
+			)
+			if err != nil {
+				// 关闭失败不直接 return，记录后继续删
+				if !isThrottlingError(err) && !isUnexpectedStatusError(err) {
+					failedMsg = append(failedMsg, fmt.Sprintf("%s(disable autoscaling error:%s)", npId, err.Error()))
+				}
+			}
+		}
+		// 查询该 nodepool 下节点并删除
 		nodes, err := DescribeClusterNodesByNodePool(client, configSpec, npId)
 		if err != nil {
 			return Changed, err
@@ -227,6 +281,7 @@ func BatchUpdateClusterNodePools(client *ackapi.Client, configSpec *ackv1.ACKClu
 				}
 			}
 		}
+		// 删除 nodepool
 		_, err = DeleteClusterNodePool(client, configSpec, npId)
 		if err != nil {
 			if !isThrottlingError(err) && !isUnexpectedStatusError(err) {
@@ -385,7 +440,10 @@ func DeleteClusterNodePool(client *ackapi.Client, configSpec *ackv1.ACKClusterCo
 	if nodePoolID == "" {
 		return nil, fmt.Errorf("nodePoolID is empty")
 	}
-	req := &ackapi.DeleteClusterNodepoolRequest{}
+	// 强制删除
+	req := &ackapi.DeleteClusterNodepoolRequest{
+		Force: tea.Bool(true),
+	}
 	headers := map[string]*string{}
 	runtime := &util.RuntimeOptions{}
 	resp, err := client.DeleteClusterNodepoolWithOptions(tea.String(configSpec.ClusterID), tea.String(nodePoolID), req, headers, runtime)
@@ -442,12 +500,31 @@ func newNodePoolCreateRequest(npConfig *ackv1.NodePoolInfo) *ackapi.CreateCluste
 		})
 	}
 
+	enable := false
+	minIns := npConfig.InstancesNum
+	maxIns := npConfig.InstancesNum
+	scalingType := npConfig.ScalingType
+
+	if npConfig.AutoScalingEnabled != nil && *npConfig.AutoScalingEnabled {
+		enable = true
+		if npConfig.MinInstances != nil {
+			minIns = *npConfig.MinInstances
+		}
+		if npConfig.MaxInstances != nil {
+			maxIns = *npConfig.MaxInstances
+		}
+	}
+
+	if enable && minIns > maxIns {
+		minIns, maxIns = maxIns, minIns
+	}
+
 	return &ackapi.CreateClusterNodePoolRequest{
 		AutoScaling: &ackapi.CreateClusterNodePoolRequestAutoScaling{
-			Enable:       tea.Bool(false),
-			MaxInstances: tea.Int64(npConfig.InstancesNum),
-			MinInstances: tea.Int64(npConfig.InstancesNum),
-			Type:         tea.String(npConfig.ScalingType),
+			Enable:       tea.Bool(enable),
+			MinInstances: tea.Int64(minIns),
+			MaxInstances: tea.Int64(maxIns),
+			Type:         tea.String(scalingType),
 		},
 		NodepoolInfo: &ackapi.CreateClusterNodePoolRequestNodepoolInfo{
 			Name: tea.String(npConfig.Name),
@@ -472,4 +549,46 @@ func newNodePoolCreateRequest(npConfig *ackv1.NodePoolInfo) *ackapi.CreateCluste
 			DesiredSize:        tea.Int64(npConfig.InstancesNum),
 		},
 	}
+}
+
+func autoscalingEnabled(np ackv1.NodePoolInfo) bool {
+	return np.AutoScalingEnabled != nil && *np.AutoScalingEnabled
+}
+
+func effectiveMinMax(np ackv1.NodePoolInfo) (min, max int64) {
+	switch {
+	case np.MinInstances != nil && np.MaxInstances != nil:
+		return *np.MinInstances, *np.MaxInstances
+	case np.MinInstances != nil:
+		v := *np.MinInstances
+		return v, v
+	case np.MaxInstances != nil:
+		v := *np.MaxInstances
+		return v, v
+	default:
+		return 0, 0
+	}
+}
+
+func autoscalingChanged(upstream, desired ackv1.NodePoolInfo) bool {
+	uEnabled := autoscalingEnabled(upstream)
+	dEnabled := autoscalingEnabled(desired)
+	if uEnabled != dEnabled {
+		return true
+	}
+	if !dEnabled {
+		return false
+	}
+	if desired.MinInstances != nil {
+		if upstream.MinInstances == nil || *upstream.MinInstances != *desired.MinInstances {
+			return true
+		}
+	}
+	if desired.MaxInstances != nil {
+		if upstream.MaxInstances == nil || *upstream.MaxInstances != *desired.MaxInstances {
+			return true
+		}
+	}
+
+	return false
 }
