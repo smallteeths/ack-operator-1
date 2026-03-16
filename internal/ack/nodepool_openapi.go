@@ -33,6 +33,9 @@ func ToNodePoolConfigInfo(nodePoolInfo *ackapi.DescribeClusterNodePoolsResponseB
 			EipInternetChargeType: tea.StringValue(nodePool.AutoScaling.EipInternetChargeType),
 			EipBandwidth:          tea.Int64Value(nodePool.AutoScaling.EipBandwidth),
 			/* scaling_group */
+			MinInstances:       nodePool.AutoScaling.MinInstances,
+			MaxInstances:       nodePool.AutoScaling.MaxInstances,
+			AutoScalingEnabled: nodePool.AutoScaling.Enable,
 			AutoRenew:          tea.BoolValue(nodePool.ScalingGroup.AutoRenew),
 			AutoRenewPeriod:    tea.Int64Value(nodePool.ScalingGroup.AutoRenewPeriod),
 			DataDisk:           dataDisks,

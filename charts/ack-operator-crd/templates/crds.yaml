@@ -108,6 +108,9 @@ spec:
                       type: boolean
                     auto_renew_period:
                       type: integer
+                    auto_scaling_enabled:
+                      nullable: true
+                      type: boolean
                     data_disk:
                       items:
                         properties:
@@ -149,6 +152,12 @@ spec:
                     login_password:
                       nullable: true
                       type: string
+                    max_instances:
+                      nullable: true
+                      type: integer
+                    min_instances:
+                      nullable: true
+                      type: integer
                     name:
                       nullable: true
                       type: string

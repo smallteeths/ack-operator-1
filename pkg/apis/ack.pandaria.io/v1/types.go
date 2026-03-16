@@ -101,12 +101,12 @@ type NodePoolInfo struct {
 	InstancesNum int64  `json:"instances_num,omitempty"`
 	ScalingType  string `json:"scaling_type,omitempty"`
 
-	// 开启/关闭自动扩容（nil = 未设置，保持旧逻辑 Enable=false）
+	// 开启/关闭自动扩容（nil = 未设置，保持旧逻辑 Enable=false），因为想要更清晰的区分设置了还是为设置所以用了 *
 	AutoScalingEnabled *bool `json:"auto_scaling_enabled,omitempty"`
 	// 覆盖 min/max（nil = 未设置，用 InstancesNum）
 	MinInstances *int64 `json:"min_instances,omitempty"`
 	MaxInstances *int64 `json:"max_instances,omitempty"`
-	
+
 	IsBondEip             bool   `json:"is_bond_eip,omitempty" norman:"noupdate"`
 	EipInternetChargeType string `json:"eip_internet_charge_type,omitempty" norman:"noupdate"`
 	EipBandwidth          int64  `json:"eip_bandwidth,omitempty" norman:"noupdate"`
