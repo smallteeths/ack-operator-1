@@ -120,10 +120,14 @@ func validateCreateRequest(configSpec *ackv1.ACKClusterConfigSpec) error {
 		return fmt.Errorf("cluster display name is required")
 	} else if configSpec.RegionID == "" {
 		return fmt.Errorf("region id is required")
-	} else if configSpec.VpcID == "" && !configSpec.SnatEntry {
-		return fmt.Errorf("snat entry is required when vpc is auto created")
 	}
-
+	if len(configSpec.ZoneIDs) == 0 {
+		if configSpec.VpcID == "" {
+			return fmt.Errorf("vpcId is required if zoneIds are not provided")
+		}
+	} else if configSpec.VpcID != "" || len(configSpec.VswitchIds) != 0 {
+		return fmt.Errorf("zoneIds should not be used together with vpcId and vSwitchIds")
+	}
 	return nil
 }
 
@@ -147,6 +151,7 @@ func newClusterCreateRequest(configSpec *ackv1.ACKClusterConfigSpec) *ackapi.Cre
 	req.SshFlags = tea.Bool(configSpec.SSHFlags)
 	req.Addons = ConvertAddons(configSpec)
 	req.VswitchIds = tea.StringSlice(configSpec.VswitchIds)
+	req.ZoneIds = tea.StringSlice(configSpec.ZoneIDs)
 	// PodVswitchIds 虽然标记了废弃，但是目前还是需要传入
 	req.PodVswitchIds = tea.StringSlice(configSpec.PodVswitchIds)
 
@@ -157,50 +162,113 @@ func newClusterCreateRequest(configSpec *ackv1.ACKClusterConfigSpec) *ackapi.Cre
 }
 
 func getInitWorkerFromDefaultNodePool(configSpec *ackv1.ACKClusterConfigSpec, req *ackapi.CreateClusterRequest) {
-	nodePools := make([]*ackapi.Nodepool, 0, 1)
+	nodePools := make([]*ackapi.Nodepool, 0, len(configSpec.NodePoolList))
+
 	for _, pool := range configSpec.NodePoolList {
-		if pool.Name == DefaultNodePoolName {
-			var dataDiskList []*ackapi.DataDisk
-			for _, dataDisk := range pool.DataDisk {
-				dataDiskList = append(dataDiskList, &ackapi.DataDisk{
-					Category:             tea.String(dataDisk.Category),
-					Size:                 tea.Int64(dataDisk.Size),
-					Encrypted:            tea.String(dataDisk.Encrypted),
-					AutoSnapshotPolicyId: tea.String(dataDisk.AutoSnapshotPolicyID),
-				})
-			}
-			nodePools = append(nodePools, &ackapi.Nodepool{
-				AutoScaling: &ackapi.NodepoolAutoScaling{
-					Enable:       tea.Bool(false),
-					MaxInstances: tea.Int64(pool.InstancesNum),
-					MinInstances: tea.Int64(pool.InstancesNum),
-					Type:         tea.String(pool.ScalingType),
-				},
-				NodepoolInfo: &ackapi.NodepoolNodepoolInfo{
-					Name: tea.String(pool.Name),
-				},
-				KubernetesConfig: &ackapi.NodepoolKubernetesConfig{
-					Runtime:        tea.String(pool.Runtime),
-					RuntimeVersion: tea.String(pool.RuntimeVersion),
-				},
-				ScalingGroup: &ackapi.NodepoolScalingGroup{
-					AutoRenew:          tea.Bool(pool.AutoRenew),
-					AutoRenewPeriod:    tea.Int64(pool.AutoRenewPeriod),
-					InstanceChargeType: tea.String(pool.InstanceChargeType),
-					InstanceTypes:      tea.StringSlice(pool.InstanceTypes),
-					KeyPair:            tea.String(pool.KeyPair),
-					Period:             tea.Int64(pool.Period),
-					PeriodUnit:         tea.String(pool.PeriodUnit),
-					ImageType:          tea.String(pool.Platform),
-					DataDisks:          dataDiskList,
-					SystemDiskCategory: tea.String(pool.SystemDiskCategory),
-					SystemDiskSize:     tea.Int64(pool.SystemDiskSize),
-					VswitchIds:         tea.StringSlice(pool.VSwitchIds),
-					DesiredSize:        tea.Int64(pool.InstancesNum),
-				},
+		var dataDiskList []*ackapi.DataDisk
+		for _, dataDisk := range pool.DataDisk {
+			dataDiskList = append(dataDiskList, &ackapi.DataDisk{
+				Category:             tea.String(dataDisk.Category),
+				Size:                 tea.Int64(dataDisk.Size),
+				Encrypted:            tea.String(dataDisk.Encrypted),
+				AutoSnapshotPolicyId: tea.String(dataDisk.AutoSnapshotPolicyID),
 			})
-			break
 		}
+
+		enable := false
+		minIns := pool.InstancesNum
+		maxIns := pool.InstancesNum
+
+		if pool.AutoScalingEnabled != nil && *pool.AutoScalingEnabled {
+			enable = true
+			if pool.MinInstances != nil {
+				minIns = *pool.MinInstances
+			}
+			if pool.MaxInstances != nil {
+				maxIns = *pool.MaxInstances
+			}
+		}
+
+		if enable && minIns > maxIns {
+			minIns, maxIns = maxIns, minIns
+		}
+
+		scalingGroup := &ackapi.NodepoolScalingGroup{
+			AutoRenew:          tea.Bool(pool.AutoRenew),
+			AutoRenewPeriod:    tea.Int64(pool.AutoRenewPeriod),
+			InstanceChargeType: tea.String(pool.InstanceChargeType),
+			InstanceTypes:      tea.StringSlice(pool.InstanceTypes),
+			KeyPair:            tea.String(pool.KeyPair),
+			Period:             tea.Int64(pool.Period),
+			PeriodUnit:         tea.String(pool.PeriodUnit),
+			ImageType:          tea.String(pool.Platform),
+			DataDisks:          dataDiskList,
+			SystemDiskCategory: tea.String(pool.SystemDiskCategory),
+			SystemDiskSize:     tea.Int64(pool.SystemDiskSize),
+			VswitchIds:         tea.StringSlice(pool.VSwitchIds),
+		}
+
+		if !enable {
+			scalingGroup.DesiredSize = tea.Int64(pool.InstancesNum)
+		}
+
+		nodePools = append(nodePools, &ackapi.Nodepool{
+			AutoScaling: &ackapi.NodepoolAutoScaling{
+				Enable:       tea.Bool(enable),
+				MaxInstances: tea.Int64(maxIns),
+				MinInstances: tea.Int64(minIns),
+				Type:         tea.String(pool.ScalingType),
+			},
+			NodepoolInfo: &ackapi.NodepoolNodepoolInfo{
+				Name: tea.String(pool.Name),
+			},
+			KubernetesConfig: &ackapi.NodepoolKubernetesConfig{
+				Runtime:        tea.String(pool.Runtime),
+				RuntimeVersion: tea.String(pool.RuntimeVersion),
+			},
+			ScalingGroup: scalingGroup,
+		})
 	}
+
 	req.Nodepools = nodePools
+}
+
+func cleanStringSlice(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := map[string]struct{}{}
+
+	for _, v := range in {
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+
+	return out
+}
+
+func cleanTeaStringSlice(in []*string) []string {
+	out := make([]string, 0, len(in))
+	seen := map[string]struct{}{}
+
+	for _, v := range in {
+		if v == nil {
+			continue
+		}
+		s := tea.StringValue(v)
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+
+	return out
 }

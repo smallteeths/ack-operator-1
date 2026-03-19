@@ -233,6 +233,21 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 	if err != nil {
 		return cfg, err
 	}
+	// 如果 ACK NodePool 没有节点则判断 ack 还在 updating 状态
+	if nodePoolsInfo == nil || len(nodePoolsInfo.Nodepools) == 0 {
+		if cfg.Status.Phase != ackConfigUpdatingPhase {
+			cfg = cfg.DeepCopy()
+			cfg.Status.Phase = ackConfigUpdatingPhase
+			cfg, err = h.ackCC.UpdateStatus(cfg)
+			if err != nil {
+				return cfg, err
+			}
+		}
+
+		logrus.Infof("waiting for cluster [%s] to update node pools: no nodepool information available yet", cfg.Name)
+		h.ackEnqueueAfter(cfg.Namespace, cfg.Name, 30*time.Second)
+		return cfg, nil
+	}
 	for _, np := range nodePoolsInfo.Nodepools {
 		if np == nil {
 			logrus.Warn("Warning update cluster: The nodepool is nil, indicating no nodepool information is available")
@@ -257,7 +272,12 @@ func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClus
 					return cfg, err
 				}
 			}
-			logrus.Infof("waiting for cluster [%s] to update node pool [%s]", cfg.Name, *np.NodepoolInfo.Name)
+			nodePoolName := "<unknown>"
+			if np.NodepoolInfo != nil && np.NodepoolInfo.Name != nil {
+				nodePoolName = *np.NodepoolInfo.Name
+			}
+
+			logrus.Infof("waiting for cluster [%s] to [%s] node pool [%s]", cfg.Name, status, nodePoolName)
 			h.ackEnqueueAfter(cfg.Namespace, cfg.Name, 30*time.Second)
 			return cfg, nil
 		}
