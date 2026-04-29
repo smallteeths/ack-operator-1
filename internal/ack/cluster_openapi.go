@@ -160,29 +160,49 @@ func UpgradeACKCluster(client *ackapi.Client, configSpec *ackv1.ACKClusterConfig
 	return resp.Body, nil
 }
 
-func ModifyACKCluster(client *ackapi.Client, configSpec *ackv1.ACKClusterConfigSpec) (*ackapi.ModifyClusterResponseBody, error) {
-	if configSpec == nil {
-		return nil, fmt.Errorf("upstreamSpec is nil")
+func ModifyACKCluster(
+	client *ackapi.Client,
+	currentSpec *ackv1.ACKClusterConfigSpec,
+	desiredSpec *ackv1.ACKClusterConfigSpec,
+) (*ackapi.ModifyClusterResponseBody, bool, error) {
+	if desiredSpec == nil {
+		return nil, false, fmt.Errorf("upstreamSpec is nil")
 	}
-	if configSpec.ClusterID == "" {
-		return nil, fmt.Errorf("clusterID is empty")
+	if currentSpec == nil {
+		return nil, false, fmt.Errorf("currentSpec is nil")
 	}
-	if configSpec.Name == "" {
-		return nil, fmt.Errorf("ACK name is empty")
+	if desiredSpec.ClusterID == "" {
+		return nil, false, fmt.Errorf("clusterID is empty")
 	}
-	req := &ackapi.ModifyClusterRequest{
-		ClusterName: tea.String(configSpec.Name),
+	req := &ackapi.ModifyClusterRequest{}
+	changed := false
+	if currentSpec.Name != desiredSpec.Name {
+		if desiredSpec.Name == "" {
+			return nil, false, fmt.Errorf("ACK name is empty")
+		}
+
+		req.ClusterName = tea.String(desiredSpec.Name)
+		changed = true
+	}
+	if currentSpec.DeletionProtection != desiredSpec.DeletionProtection {
+		req.DeletionProtection = tea.Bool(desiredSpec.DeletionProtection)
+		changed = true
+	}
+	if !changed {
+		return nil, false, nil
 	}
 	headers := make(map[string]*string)
 	runtime := &util.RuntimeOptions{}
-	resp, err := client.ModifyClusterWithOptions(tea.String(configSpec.ClusterID), req, headers, runtime)
+
+	resp, err := client.ModifyClusterWithOptions(tea.String(desiredSpec.ClusterID), req, headers, runtime)
 	if err != nil {
-		return nil, fmt.Errorf("modify ACK cluster failed: %w", err)
+		return nil, false, fmt.Errorf("modify ACK cluster failed: %w", err)
 	}
 	if resp.Body == nil {
-		return nil, fmt.Errorf("modify ACK cluster succeeded but response body is nil")
+		return nil, false, fmt.Errorf("modify ACK cluster succeeded but response body is nil")
 	}
-	return resp.Body, nil
+
+	return resp.Body, true, nil
 }
 
 func DescribeClusterNodePools(client *ackapi.Client, configSpec *ackv1.ACKClusterConfigSpec) (*ackapi.DescribeClusterNodePoolsResponseBody, error) {
