@@ -77,7 +77,8 @@ type ACKClusterConfigSpec struct {
 	TaskId              string  `json:"taskId"`
 	Addons              []Addon `json:"addons,omitempty" norman:"noupdate"`
 	// 创建新的 vpc vswitch
-	ZoneIDs []string `json:"zoneIds,omitempty" norman:"noupdate"`
+	ZoneIDs            []string `json:"zoneIds,omitempty" norman:"noupdate"`
+	DeletionProtection bool     `json:"deletionProtection,omitempty"`
 }
 
 type ACKClusterConfigStatus struct {

@@ -42,6 +42,7 @@ func BuildUpstreamClusterState(secretsCache wranglerv1.SecretCache, configSpec *
 	}
 	newSpec.PauseClusterUpgrade = pauseClusterUpgrade
 	newSpec.ClusterIsUpgrading = clusterIsUpgrading
+	newSpec.DeletionProtection = tea.BoolValue(cluster.DeletionProtection)
 	newSpec.NodePoolList, err = GetNodePoolConfigInfo(secretsCache, configSpec)
 	if err != nil {
 		return nil, err

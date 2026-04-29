@@ -154,6 +154,7 @@ func newClusterCreateRequest(configSpec *ackv1.ACKClusterConfigSpec) *ackapi.Cre
 	req.ZoneIds = tea.StringSlice(configSpec.ZoneIDs)
 	// PodVswitchIds 虽然标记了废弃，但是目前还是需要传入
 	req.PodVswitchIds = tea.StringSlice(configSpec.PodVswitchIds)
+	req.DeletionProtection = tea.Bool(configSpec.DeletionProtection)
 
 	// get worker creation info from default node pool
 	getInitWorkerFromDefaultNodePool(configSpec, req)

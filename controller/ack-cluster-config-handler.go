@@ -57,7 +57,7 @@ func Register(
 
 	// Register handlers
 	ack.OnChange(ctx, controllerName, controller.recordError(controller.OnAckConfigChanged))
-	ack.OnRemove(ctx, controllerRemoveName, controller.OnAckConfigRemoved)
+	ack.OnRemove(ctx, controllerRemoveName, controller.recordError(controller.OnAckConfigRemoved))
 }
 
 func (h *Handler) OnAckConfigChanged(key string, config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfig, error) {
@@ -104,7 +104,7 @@ func (h *Handler) recordError(onChange func(key string, config *ackv1.ACKCluster
 		config = config.DeepCopy()
 
 		if message != "" {
-			if config.Status.Phase == ackConfigActivePhase {
+			if config.DeletionTimestamp == nil && config.Status.Phase == ackConfigActivePhase {
 				// can assume an update is failing
 				config.Status.Phase = ackConfigUpdatingPhase
 			}
@@ -322,10 +322,9 @@ func (h *Handler) updateUpstreamClusterState(config *ackv1.ACKClusterConfig, ups
 		if err != nil {
 			return config, err
 		}
-		if config.Spec.Name != upstreamSpec.Name {
-			if _, err := ack.ModifyACKCluster(client, upstreamSpec); err != nil {
-				return config, err
-			}
+		if _, clusterChanged, err := ack.ModifyACKCluster(client, &config.Spec, upstreamSpec); err != nil {
+			return config, err
+		} else if clusterChanged {
 			changed = ack.Changed
 		}
 		nodepoolChanged, err := ack.BatchUpdateClusterNodePools(client, &config.Spec)
