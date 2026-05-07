@@ -57,7 +57,7 @@ func Register(
 
 	// Register handlers
 	ack.OnChange(ctx, controllerName, controller.recordError(controller.OnAckConfigChanged))
-	ack.OnRemove(ctx, controllerRemoveName, controller.recordError(controller.OnAckConfigRemoved))
+	ack.OnRemove(ctx, controllerRemoveName, controller.OnAckConfigRemoved)
 }
 
 func (h *Handler) OnAckConfigChanged(key string, config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfig, error) {
@@ -65,9 +65,8 @@ func (h *Handler) OnAckConfigChanged(key string, config *ackv1.ACKClusterConfig)
 		return nil, nil
 	}
 	if config.DeletionTimestamp != nil {
-		return nil, nil
+		return h.syncDeletionProtectionOnDeleting(config)
 	}
-
 	switch config.Status.Phase {
 	case ackConfigImportingPhase:
 		return h.importCluster(config)
@@ -118,6 +117,38 @@ func (h *Handler) recordError(onChange func(key string, config *ackv1.ACKCluster
 		}
 		return config, err
 	}
+}
+
+func (h *Handler) syncDeletionProtectionOnDeleting(config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfig, error) {
+	if config == nil {
+		return nil, nil
+	}
+	ackCluster, err := ack.DescribeACKCluster(h.secretsCache, &config.Spec)
+	if err != nil {
+		logrus.Infof("get ACK cluster [%s] error while deleting: %+v", config.Spec.Name, err)
+		if ack.IsNotFound(err) {
+			logrus.Infof("ACK cluster [%s], region [%s] already removed", config.Spec.Name, config.Spec.RegionID)
+			return config, nil
+		}
+		return config, err
+	}
+	currentDeletionProtection := false
+	if ackCluster.DeletionProtection != nil {
+		currentDeletionProtection = *ackCluster.DeletionProtection
+	}
+	if currentDeletionProtection == config.Spec.DeletionProtection {
+		logrus.Infof("ACK cluster [%s] deletion protection already matches desired value [%v] while deleting", config.Name, config.Spec.DeletionProtection)
+		return config, nil
+	}
+	client, err := ack.NewACKClient(h.secretsCache, &config.Spec)
+	if err != nil {
+		return config, err
+	}
+	logrus.Infof("updating ACK cluster [%s] deletion protection while deleting, current [%v], desired [%v]", config.Name, currentDeletionProtection, config.Spec.DeletionProtection)
+	if _, err := ack.ModifyACKClusterDeletionProtection(client, config.Spec.ClusterID, config.Spec.DeletionProtection); err != nil {
+		return config, err
+	}
+	return config, nil
 }
 
 func (h *Handler) checkAndUpdate(config *ackv1.ACKClusterConfig) (*ackv1.ACKClusterConfig, error) {
@@ -322,7 +353,7 @@ func (h *Handler) updateUpstreamClusterState(config *ackv1.ACKClusterConfig, ups
 		if err != nil {
 			return config, err
 		}
-		if _, clusterChanged, err := ack.ModifyACKCluster(client, &config.Spec, upstreamSpec); err != nil {
+		if _, clusterChanged, err := ack.ModifyACKCluster(client, upstreamSpec, &config.Spec); err != nil {
 			return config, err
 		} else if clusterChanged {
 			changed = ack.Changed

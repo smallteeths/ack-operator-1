@@ -205,6 +205,29 @@ func ModifyACKCluster(
 	return resp.Body, true, nil
 }
 
+func ModifyACKClusterDeletionProtection(
+	client *ackapi.Client,
+	clusterID string,
+	deletionProtection bool,
+) (*ackapi.ModifyClusterResponseBody, error) {
+	if clusterID == "" {
+		return nil, fmt.Errorf("clusterID is empty")
+	}
+	req := &ackapi.ModifyClusterRequest{
+		DeletionProtection: tea.Bool(deletionProtection),
+	}
+	headers := make(map[string]*string)
+	runtime := &util.RuntimeOptions{}
+	resp, err := client.ModifyClusterWithOptions(tea.String(clusterID), req, headers, runtime)
+	if err != nil {
+		return nil, fmt.Errorf("modify ACK cluster deletion protection failed: %w", err)
+	}
+	if resp.Body == nil {
+		return nil, fmt.Errorf("modify ACK cluster deletion protection succeeded but response body is nil")
+	}
+	return resp.Body, nil
+}
+
 func DescribeClusterNodePools(client *ackapi.Client, configSpec *ackv1.ACKClusterConfigSpec) (*ackapi.DescribeClusterNodePoolsResponseBody, error) {
 	if configSpec == nil {
 		return nil, fmt.Errorf("configSpec is nil")
