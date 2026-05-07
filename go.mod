@@ -16,7 +16,7 @@ require (
 	github.com/alibabacloud-go/tea-utils/v2 v2.0.7
 	github.com/aliyun/credentials-go v1.4.5
 	github.com/google/uuid v1.6.0
-	github.com/rancher/lasso v0.2.8
+	github.com/rancher/lasso v0.2.7
 	github.com/rancher/wrangler-api v0.6.1-0.20200427172631-a7c2f09b783e
 	github.com/rancher/wrangler/v3 v3.5.0-rc.2
 	github.com/sirupsen/logrus v1.9.4
