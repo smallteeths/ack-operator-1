@@ -111,7 +111,13 @@ func StringPtrSliceToStringSliceRaw(src []*string) []string {
 }
 
 func IsNotFound(err error) bool {
-	return strings.Contains(err.Error(), "ErrorClusterNotFound")
+	if err == nil {
+		return false
+	}
+	errMsg := err.Error()
+	return strings.Contains(errMsg, "ErrorClusterNotFound") ||
+		strings.Contains(errMsg, "ACK configSpec is nil") ||
+		strings.Contains(errMsg, "clusterID is empty")
 }
 
 // validateCreateRequest checks a config for the ability to generate a create request

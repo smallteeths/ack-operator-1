@@ -251,7 +251,7 @@ func DescribeClusterNodePools(client *ackapi.Client, configSpec *ackv1.ACKCluste
 
 func RemoveACKCluster(client *ackapi.Client, configSpec *ackv1.ACKClusterConfigSpec) error {
 	if configSpec == nil {
-		return fmt.Errorf("configSpec is nil")
+		return fmt.Errorf("ACK configSpec is nil")
 	}
 	if configSpec.ClusterID == "" {
 		return fmt.Errorf("clusterID is empty")
